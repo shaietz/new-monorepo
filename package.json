@@ -1,20 +1,25 @@
 {
   "name": "new-monorepo",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt --check",
+    "format:fix": "oxfmt",
     "check-types": "turbo run check-types"
   },
   "devDependencies": {
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.77.0",
     "prettier": "^3.7.4",
     "turbo": "^2.10.8",
     "typescript": "5.9.2"
-  },
-  "engines": {
-    "node": ">=18"
   },
   "devEngines": {
     "packageManager": {
@@ -22,8 +27,7 @@
       "version": "11.16.0"
     }
   },
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ]
+  "engines": {
+    "node": ">=18"
+  }
 }
