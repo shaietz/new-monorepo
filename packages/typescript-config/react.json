@@ -1,12 +1,21 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "./base.json",
+
   "compilerOptions": {
-    "plugins": [{ "name": "next" }],
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ],
+
+    "jsx": "react-jsx",
+
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "allowJs": true,
-    "jsx": "preserve",
-    "noEmit": true
+
+    "types": [
+      "vite/client"
+    ]
   }
 }
