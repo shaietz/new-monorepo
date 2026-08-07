@@ -70,6 +70,12 @@ function openTty() {
   const isWindows = process.platform === "win32";
   const ttyIn = isWindows ? "\\\\.\\CONIN$" : "/dev/tty";
   const ttyOut = isWindows ? "\\\\.\\CONOUT$" : "/dev/tty";
+  if (isWindows) {
+    // Writing raw bytes straight to CONOUT$ bypasses Node's normal UTF-8
+    // console conversion, so clack's box-drawing characters render as
+    // mojibake unless the console's active output code page is UTF-8.
+    spawnSync("chcp", ["65001"], { shell: true, stdio: "ignore" });
+  }
   return {
     input: createReadStream(ttyIn),
     output: createWriteStream(ttyOut),
