@@ -15,9 +15,12 @@
     "format": "oxfmt --check",
     "format:fix": "oxfmt",
     "check-types": "turbo run check-types",
-    "syncpack": "syncpack lint"
+    "syncpack": "syncpack lint",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
     "oxfmt": "^0.62.0",
     "oxlint": "^1.77.0",
     "syncpack": "^15.3.2",
