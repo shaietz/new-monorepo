@@ -43,6 +43,10 @@
     {
       "files": ["**/*.config.{ts,js,mts,mjs}"],
       "rules": { "no-console": "off" }
+    },
+    {
+      "files": ["scripts/**"],
+      "rules": { "no-console": "off", "no-underscore-dangle": "off", "node/no-sync": "off" }
     }
   ]
 }
