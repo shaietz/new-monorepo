@@ -1,31 +1,19 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
-    "target": "ES2024",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-
+    "noEmit": true,
+    "target": "esnext",
     "strict": true,
-
-    "verbatimModuleSyntax": true,
-    "erasableSyntaxOnly": true,
-
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
-
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
-
-    "skipLibCheck": true,
-
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
-
     "resolveJsonModule": true,
-
-    "noEmit": true
+    "skipLibCheck": true
   }
 }

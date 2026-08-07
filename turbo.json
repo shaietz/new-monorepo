@@ -13,7 +13,10 @@
     "//#quality:fix": {
       "dependsOn": ["//#lint:fix", "//#format:fix"]
     },
-    "//#lint": {},
+    "//#lint": {
+      "inputs": ["**/*.{ts,tsx,js,jsx,mjs}", ".oxlintrc.json"],
+      "outputs": []
+    },
     "//#lint:fix": {
       "cache": false
     },
@@ -23,6 +26,9 @@
     },
     "check-types": {
       "dependsOn": ["^check-types"]
+    },
+    "//#syncpack": {
+      "cache": false
     },
     "dev": {
       "cache": false,

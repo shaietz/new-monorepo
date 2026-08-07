@@ -1,0 +1,22 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "keywords": [],
+  "author": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "check-types": "tsc"
+  },
+  "dependencies": {
+    "fastify": "^5.11.2"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "*",
+    "@types/node": "^24.13.3",
+    "typescript": "~6.0.2"
+  }
+}
