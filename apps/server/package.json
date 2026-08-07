@@ -8,7 +8,9 @@
   "main": "index.js",
   "scripts": {
     "dev": "node --watch src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "check-types": "tsc"
   },
   "dependencies": {
@@ -17,6 +19,8 @@
   "devDependencies": {
     "@repo/typescript-config": "*",
     "@types/node": "^24.13.3",
-    "typescript": "~6.0.2"
+    "@vitest/coverage-v8": "^4.1.10",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.10"
   }
 }

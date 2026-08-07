@@ -13,7 +13,7 @@
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
     "import/no-cycle": "error",
-    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css", "@testing-library/**"] }],
     "unicorn/prefer-node-protocol": "error",
     "node/no-sync": "warn"
   },
@@ -29,12 +29,20 @@
       }
     },
     {
-      "files": ["**/*.config.{ts,js,mts,mjs}"],
-      "rules": { "no-console": "off" }
+      "files": ["**/*.{test,spec}.{ts,tsx}"],
+      "plugins": ["vitest"],
+      "rules": {
+        "typescript/no-explicit-any": "off",
+        "no-console": "off",
+        "vitest/no-focused-tests": "error",
+        "vitest/no-identical-title": "error",
+        "vitest/expect-expect": "error",
+        "vitest/no-disabled-tests": "warn"
+      }
     },
     {
-      "files": ["**/*.{test,spec}.{ts,tsx}"],
-      "rules": { "typescript/no-explicit-any": "off", "no-console": "off" }
+      "files": ["**/*.config.{ts,js,mts,mjs}"],
+      "rules": { "no-console": "off" }
     }
   ]
 }

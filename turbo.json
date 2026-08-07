@@ -24,6 +24,9 @@
     "//#format:fix": {
       "cache": false
     },
+    "test": { "dependsOn": ["^build"], "outputs": [] },
+    "test:watch": { "cache": false, "persistent": true },
+    "test:coverage": { "dependsOn": ["^build"], "outputs": ["coverage/**"] },
     "check-types": {
       "dependsOn": ["^check-types"]
     },
