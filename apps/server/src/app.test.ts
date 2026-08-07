@@ -67,29 +67,3 @@ describe("request ids", () => {
     expect(res.json().id).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
-
-describe("POST /users", () => {
-  it("accepts a body matching the shared schema", async () => {
-    const server = await build();
-    const res = await server.inject({
-      method: "POST",
-      url: "/users",
-      payload: { email: "user@example.dev", displayName: "Ada" },
-    });
-
-    expect(res.statusCode).toBe(201);
-    expect(res.json()).toMatchObject({ email: "user@example.dev", displayName: "Ada" });
-    expect(res.json().id).toEqual(expect.any(String));
-  });
-
-  it("rejects a body the shared schema refuses", async () => {
-    const server = await build();
-    const res = await server.inject({
-      method: "POST",
-      url: "/users",
-      payload: { email: "not-an-email", displayName: "" },
-    });
-
-    expect(res.statusCode).toBe(400);
-  });
-});

@@ -1,12 +1,11 @@
 {
   "name": "server",
-  "version": "1.0.0",
-  "description": "",
-  "keywords": [],
-  "author": "",
+  "version": "0.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "node --watch src/index.ts",
+    "start": "node src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -14,7 +13,6 @@
   },
   "dependencies": {
     "@repo/fastify-base": "*",
-    "@repo/schemas": "*",
     "fastify": "^5.11.2"
   },
   "devDependencies": {

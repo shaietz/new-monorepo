@@ -1,159 +1,96 @@
-# Turborepo starter
+# new-monorepo
 
-This Turborepo starter is maintained by the Turborepo core team.
+A Turborepo housing multiple Fastify services and multiple React clients, with shared packages
+between them.
 
-## Using this example
+Requires **Node >= 24** and **npm 11**. Node 24 strips TypeScript types at load, and Vite compiles
+the browser side, so shared packages ship TypeScript source with **no build step**.
 
-Run the following command:
+## Workspaces
 
-```sh
-npx create-turbo@latest
+```
+apps/
+  client                    React 19 + Vite SPA                      [app, browser]
+  server                    Fastify 5 service                        [app, node]
+packages/
+  @repo/fastify-base        env validation, security, health,        [node]
+                            metrics, graceful shutdown
+  @repo/schemas             Zod schemas shared client <-> server     [isomorphic]
+  @repo/typescript-config   base / node / react / library tsconfigs  [config]
 ```
 
-## What's inside?
+`apps/client` and `apps/server` are deliberately bare. They are the sources the `turbo gen`
+templates will be cut from, so anything added to them lands in every future app.
 
-This Turborepo includes the following packages/apps:
-
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+## Getting started
 
 ```sh
-cd my-turborepo
-turbo build
+npm install
+cp apps/server/.env.example apps/server/.env
+npx turbo run dev
 ```
 
-Without global `turbo`, use your package manager:
+## Scripts
 
-```sh
-cd my-turborepo
-npx turbo build
-npm dlx turbo build
-npm exec turbo build
-```
+| Script                                  | What it does                                      |
+| --------------------------------------- | ------------------------------------------------- |
+| `npm run dev`                           | Every workspace's dev task, in parallel.          |
+| `npm run build`                         | Build tasks, respecting the dependency graph.     |
+| `npm test`                              | Vitest across every workspace.                    |
+| `npm run check-types`                   | `tsc` across every workspace.                     |
+| `npm run lint` / `lint:fix` / `lint:ci` | oxlint; `lint:ci` fails on warnings.              |
+| `npm run format` / `format:fix`         | oxfmt.                                            |
+| `npm run syncpack`                      | One version per dependency across all workspaces. |
+| `npm run knip`                          | Unused files, exports and dependencies.           |
+| `npm run boundaries`                    | Enforce the dependency rules below.               |
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+Run a single workspace with `npm run <script> -w <name>` or `npx turbo run <task> --filter=<name>`.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+Tests can also be run from the root as one Vitest run — `vitest.config.ts` aggregates every
+workspace via `projects: ["apps/*", "packages/*"]`, which is why each workspace's `test.name`
+must be unique.
 
-```sh
-turbo build --filter=docs
-```
+## Boundaries
 
-Without global `turbo`:
+`turbo.json` assigns each workspace tags, and `npm run boundaries` enforces them:
 
-```sh
-npx turbo build --filter=docs
-npm exec turbo build --filter=docs
-npm exec turbo build --filter=docs
-```
+| Tag          | Rule                                           |
+| ------------ | ---------------------------------------------- |
+| `app`        | Nothing may depend on it — apps are leaves.    |
+| `browser`    | May not depend on `node`.                      |
+| `node`       | May not depend on `browser`.                   |
+| `isomorphic` | May depend on neither — it has to run in both. |
+| `config`     | No restrictions.                               |
 
-### Develop
+`app` is stated as `dependents: { allow: [] }` rather than being listed in three separate denylists.
+It covers app → app, package → app, and any tag added later, in one place.
 
-To develop all apps and packages, run the following command:
+Boundaries are about the dependency graph. **Environment is enforced separately, by tsconfig** —
+`@repo/typescript-config/react.json` sets `types: ["vite/client"]`, `node.json` sets `types: ["node"]`,
+and `library.json` sets `types: []`, so `tsc` rejects `process` or `node:fs` in browser and
+isomorphic code.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+## Conventions
 
-```sh
-cd my-turborepo
-turbo dev
-```
+Root configs name **zero packages**. `.oxlintrc.json`, `turbo.json` and `knip.json` match by glob
+and convention, so a new workspace is picked up without editing anything at the root. Keep it that
+way.
 
-Without global `turbo`, use your package manager:
+Every workspace with tests defines `test`, `test:watch` and `test:coverage`, and gates coverage at
+80%. Every workspace defines `check-types`.
 
-```sh
-cd my-turborepo
-npx turbo dev
-npm exec turbo dev
-npm exec turbo dev
-```
+## Hooks
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+`pre-commit` runs lint-staged (oxlint `--fix`, then oxfmt). `pre-push` runs `turbo run check-types`.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Adding an app
 
-```sh
-turbo dev --filter=web
-```
+Generators are not built yet. Until they are, copy `apps/client` or `apps/server` and change:
 
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-npm exec turbo dev --filter=web
-npm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-npm exec turbo login
-npm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-npm exec turbo link
-npm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+| Seam                | Where                                                                              |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| package name        | `package.json` → `name`                                                            |
+| vitest project name | `test.name` — **must be unique**, or root runs collide                             |
+| page title          | `apps/client/index.html` → `<title>`                                               |
+| service port        | `apps/server/.env.example` → `PORT` — **8080 by default, so two services collide** |
+| boundary tags       | `turbo.json` → `["app","browser"]` or `["app","node"]`                             |

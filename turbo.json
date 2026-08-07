@@ -31,12 +31,6 @@
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
     },
-    "//#quality": {
-      "dependsOn": ["//#lint", "//#format"]
-    },
-    "//#quality:fix": {
-      "dependsOn": ["//#lint:fix", "//#format:fix"]
-    },
     "//#lint": {
       "inputs": ["**/*.{ts,tsx,js,jsx,mjs}", ".oxlintrc.json"],
       "outputs": []
@@ -44,10 +38,10 @@
     "//#lint:fix": {
       "cache": false
     },
-    "//#format": {},
-    "//#format:fix": {
+    "//#format": {
       "cache": false
     },
+    "//#format:check": {},
     "test": {
       "dependsOn": ["^build"],
       "outputs": []

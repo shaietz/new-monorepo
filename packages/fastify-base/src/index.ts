@@ -11,4 +11,5 @@ export type { BasePluginOptions } from "./plugin.ts";
 /** @public — so services declare env vars and route schemas without their own `zod` dependency. */
 export { z } from "zod";
 
+/** @public — services pass this to `.withTypeProvider<…>()` for inferred request and reply types. */
 export type { ZodTypeProvider } from "@fastify/type-provider-zod";
