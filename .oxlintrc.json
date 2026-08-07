@@ -47,7 +47,7 @@
     },
     {
       "files": ["scripts/**"],
-      "rules": { "no-console": "off", "no-underscore-dangle": "off", "node/no-sync": "off" }
+      "rules": { "no-console": "off", "node/no-sync": "off" }
     }
   ]
 }
