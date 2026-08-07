@@ -17,15 +17,18 @@
     "test": "turbo run test",
     "check-types": "turbo run check-types",
     "syncpack": "syncpack lint",
-    "prepare": "husky"
+    "prepare": "husky",
+    "knip": "knip"
   },
   "devDependencies": {
     "husky": "^9.1.7",
+    "knip": "^6.32.0",
     "lint-staged": "^17.3.0",
     "oxfmt": "^0.62.0",
     "oxlint": "^1.77.0",
     "syncpack": "^15.3.2",
-    "turbo": "^2.10.8"
+    "turbo": "^2.10.8",
+    "vitest": "^4.1.10"
   },
   "devEngines": {
     "packageManager": {

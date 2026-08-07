@@ -6,6 +6,7 @@ export const UserSchema = z.object({
   displayName: z.string().trim().min(1).max(80),
 });
 
+/** @public — for consumers typing user data; not referenced inside this package. */
 export type User = z.infer<typeof UserSchema>;
 
 export const CreateUserSchema = UserSchema.omit({ id: true });
