@@ -2,6 +2,7 @@ import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import viteLogo from "./assets/vite.svg";
 import heroImg from "./assets/hero.png";
+import { SignupForm } from "./SignupForm";
 import "./App.css";
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
         <button type="button" className="counter" onClick={() => setCount((c) => c + 1)}>
           Count is {count}
         </button>
+        <SignupForm />
       </section>
 
       <div className="ticks"></div>

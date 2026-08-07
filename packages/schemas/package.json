@@ -1,25 +1,22 @@
 {
-  "name": "server",
-  "version": "1.0.0",
-  "description": "",
-  "keywords": [],
-  "author": "",
+  "name": "@repo/schemas",
+  "version": "0.0.0",
+  "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "dev": "node --watch src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check-types": "tsc"
   },
   "dependencies": {
-    "@repo/fastify-base": "*",
-    "@repo/schemas": "*",
-    "fastify": "^5.11.2"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@repo/typescript-config": "*",
-    "@types/node": "^24.13.3",
     "@vitest/coverage-v8": "^4.1.10",
     "typescript": "~6.0.2",
     "vitest": "^4.1.10"

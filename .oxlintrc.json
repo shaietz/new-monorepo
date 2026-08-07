@@ -15,7 +15,8 @@
     "import/no-cycle": "error",
     "import/no-unassigned-import": ["error", { "allow": ["**/*.css", "@testing-library/**"] }],
     "unicorn/prefer-node-protocol": "error",
-    "node/no-sync": "warn"
+    "node/no-sync": "warn",
+    "oxc/no-async-endpoint-handlers": "off"
   },
   "overrides": [
     {
