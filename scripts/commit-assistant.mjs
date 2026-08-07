@@ -22,7 +22,6 @@ const TYPES = [
   { name: "ci        CI configuration", value: "ci" },
   { name: "chore     Maintenance", value: "chore" },
   { name: "revert    Revert a previous commit", value: "revert" },
-  { name: "revert    Revert a previous commit", value: "revert" },
 ];
 
 function runCommitlint() {
