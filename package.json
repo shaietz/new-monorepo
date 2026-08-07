@@ -18,7 +18,8 @@
     "check-types": "turbo run check-types",
     "syncpack": "syncpack lint",
     "prepare": "husky",
-    "knip": "knip"
+    "knip": "knip",
+    "boundaries": "turbo boundaries"
   },
   "devDependencies": {
     "husky": "^9.1.7",

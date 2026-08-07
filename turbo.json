@@ -1,6 +1,30 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
+  "boundaries": {
+    "tags": {
+      "app": {
+        "dependents": {
+          "allow": []
+        }
+      },
+      "browser": {
+        "dependencies": {
+          "deny": ["node"]
+        }
+      },
+      "node": {
+        "dependencies": {
+          "deny": ["browser"]
+        }
+      },
+      "isomorphic": {
+        "dependencies": {
+          "deny": ["node", "browser"]
+        }
+      }
+    }
+  },
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -24,9 +48,18 @@
     "//#format:fix": {
       "cache": false
     },
-    "test": { "dependsOn": ["^build"], "outputs": [] },
-    "test:watch": { "cache": false, "persistent": true },
-    "test:coverage": { "dependsOn": ["^build"], "outputs": ["coverage/**"] },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
     "check-types": {
       "dependsOn": ["^check-types"]
     },
