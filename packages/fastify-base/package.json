@@ -1,0 +1,40 @@
+{
+  "name": "@repo/fastify-base",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check-types": "tsc"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@fastify/helmet": "^13.1.0",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/sensible": "^6.0.4",
+    "@fastify/swagger": "^9.8.1",
+    "@fastify/type-provider-zod": "^1.0.0",
+    "@fastify/under-pressure": "^9.1.0",
+    "close-with-grace": "^2.5.0",
+    "fastify-metrics": "^13.2.1",
+    "fastify-plugin": "^6.0.0",
+    "openapi-types": "^12.1.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "*",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^4.1.10",
+    "fastify": "^5.11.2",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "fastify": "^5.11.2"
+  }
+}
