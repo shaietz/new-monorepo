@@ -19,10 +19,16 @@
     "syncpack": "syncpack lint",
     "prepare": "husky",
     "knip": "knip",
-    "boundaries": "turbo boundaries"
+    "boundaries": "turbo boundaries",
+    "commit": "cz"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "commitizen": "^4.3.1",
+    "cz-conventional-changelog": "^3.3.0",
     "husky": "^9.1.7",
+    "inquirer": "^9.3.7",
     "knip": "^6.32.0",
     "lint-staged": "^17.3.0",
     "oxfmt": "^0.62.0",
@@ -30,6 +36,11 @@
     "syncpack": "^15.3.2",
     "turbo": "^2.10.8",
     "vitest": "^4.1.10"
+  },
+  "config": {
+    "commitizen": {
+      "path": "cz-conventional-changelog"
+    }
   },
   "devEngines": {
     "packageManager": {
