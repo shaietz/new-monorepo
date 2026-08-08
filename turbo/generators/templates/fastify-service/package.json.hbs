@@ -1,0 +1,25 @@
+{
+  "name": "{{ name }}",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.ts",
+    "start": "node src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check-types": "tsc"
+  },
+  "dependencies": {
+    "@repo/fastify-base": "*",
+    "fastify": "^5.11.2"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "*",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^4.1.10",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.10"
+  }
+}

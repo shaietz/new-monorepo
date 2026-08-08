@@ -1,0 +1,20 @@
+import { describe, expect, it } from "vitest";
+import { greeting } from "./greeting.ts";
+
+describe("greeting", () => {
+  it("greets with the default salutation", () => {
+    expect(greeting("world")).toBe("Hello, world!");
+  });
+
+  it("uses a custom salutation when one is given", () => {
+    expect(greeting("world", { salutation: "Howdy" })).toBe("Howdy, world!");
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(greeting("  world  ")).toBe("Hello, world!");
+  });
+
+  it("rejects a blank name", () => {
+    expect(() => greeting("   ")).toThrow(TypeError);
+  });
+});

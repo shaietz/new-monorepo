@@ -1,4 +1,9 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "includeEntryExports": true
+  "includeEntryExports": true,
+  "workspaces": {
+    ".": {
+      "entry": ["turbo/generators/config.ts"]
+    }
+  }
 }

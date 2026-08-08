@@ -21,8 +21,9 @@ packages/
 The `isomorphic` tag has no members yet. It is the slot for code shared between a client and a
 service — Zod schemas being the obvious case — and `library.json` is the tsconfig to build it on.
 
-`apps/client` and `apps/server` are deliberately bare. They are the sources the `turbo gen`
-templates will be cut from, so anything added to them lands in every future app.
+`apps/client` and `apps/server` are deliberately bare. The [generators](#generators) were cut from
+them, and `turbo/generators/templates/` still mirrors them file for file — so anything added here
+should be added there too, and it then lands in every future app.
 
 ## Getting started
 
@@ -36,6 +37,7 @@ npx turbo run dev
 
 | Script                                  | What it does                                      |
 | --------------------------------------- | ------------------------------------------------- |
+| `npm run gen`                           | Scaffold a new app or package. See below.         |
 | `npm run dev`                           | Every workspace's dev task, in parallel.          |
 | `npm run build`                         | Build tasks, respecting the dependency graph.     |
 | `npm test`                              | Vitest across every workspace.                    |
@@ -79,20 +81,73 @@ and convention, so a new workspace is picked up without editing anything at the 
 way.
 
 Every workspace with tests defines `test`, `test:watch` and `test:coverage`, and gates coverage at
-80%. Every workspace defines `check-types`.
+80%. Every workspace defines `check-types`. Each workspace's Vitest `test.name` must stay unique —
+the [generators](#generators) enforce that by refusing a name that already exists in either
+workspace directory.
 
 ## Hooks
 
 `pre-commit` runs lint-staged (oxlint `--fix`, then oxfmt). `pre-push` runs `turbo run check-types`.
 
-## Adding an app
+## Generators
 
-Generators are not built yet. Until they are, copy `apps/client` or `apps/server` and change:
+Three generators scaffold a complete workspace — Dockerfile, tests, coverage gates, boundary tags,
+README — and run `npm install`, so the result passes the whole CI gate and is deployable from the
+moment it exists.
 
-| Seam                | Where                                                                              |
-| ------------------- | ---------------------------------------------------------------------------------- |
-| package name        | `package.json` → `name`                                                            |
-| vitest project name | `test.name` — **must be unique**, or root runs collide                             |
-| page title          | `apps/client/index.html` → `<title>`                                               |
-| service port        | `apps/server/.env.example` → `PORT` — **8080 by default, so two services collide** |
-| boundary tags       | `turbo.json` → `["app","browser"]` or `["app","node"]`                             |
+```sh
+npm run gen                      # pick from a list
+npx turbo gen react-app          # or name one directly
+npx turbo gen fastify-service
+npx turbo gen package
+```
+
+| Generator         | Creates           | Tags                  | Prompts                             |
+| ----------------- | ----------------- | --------------------- | ----------------------------------- |
+| `react-app`       | `apps/<name>`     | `["app","browser"]`   | name                                |
+| `fastify-service` | `apps/<name>`     | `["app","node"]`      | name, port (next free is suggested) |
+| `package`         | `packages/<name>` | environment-dependent | name, environment                   |
+
+`package` asks where the code runs, which picks the tsconfig base and the boundary tag:
+
+| Environment  | `tsconfig` extends                     | Tags             |
+| ------------ | -------------------------------------- | ---------------- |
+| `isomorphic` | `@repo/typescript-config/library.json` | `["isomorphic"]` |
+| `node`       | `@repo/typescript-config/node.json`    | `["node"]`       |
+| `browser`    | `@repo/typescript-config/react.json`   | `["browser"]`    |
+
+Apps are unscoped and named after their directory; packages are imported as `@repo/<name>` — you
+type the bare name and the scope is added for you. Names must be kebab-case and must not already
+exist under `apps/` **or** `packages/`: the two share a namespace because a workspace's Vitest
+`test.name` is the bare name either way, and the root run aggregates both.
+
+`fastify-service` reads `PORT` out of every `apps/*/.env.example`, offers the lowest free port from
+8080 up, and refuses one that is taken — naming the app that holds it. The port also becomes
+`ENV PORT`, `EXPOSE` and the healthcheck target in the generated Dockerfile, so the image's declared
+port is the one it actually listens on.
+
+Answers can be passed positionally for scripting, in prompt order:
+`npx turbo gen fastify-service --args orders 8082`. Validation still runs.
+
+Nothing at the root needs editing afterwards. `.oxlintrc.json`, `turbo.json`, `knip.json`, the root
+`vitest.config.ts` and the `Jenkinsfile` all pick the new workspace up by glob and convention.
+
+### Editing the generators
+
+`turbo/generators/config.ts` wires up templates under `turbo/generators/templates/`.
+
+- Template files are suffixed `.hbs`, which `addMany` strips. **`Dockerfile` is the exception** — it
+  is stored unsuffixed, because plop only strips `.hbs` when the remaining name still has an
+  extension. It is rendered through Handlebars all the same.
+- The suffix is load-bearing: it is what hides templates from oxlint, knip, `tsc` and Vitest.
+  `.oxfmtrc.json` has to exclude them explicitly, though — oxfmt formats by content, not extension,
+  and will happily reflow a template into rubble.
+- Content that needs a literal `{{` has to escape it as `\{{`, or sit inside a
+  `{{{{raw}}}}…{{{{/raw}}}}` block.
+- Third-party dependency versions in `package.json.hbs` must match the rest of the repo or
+  `npm run syncpack` fails on the next generated workspace. Bump them alongside the repo's.
+- `config.ts` is bundled to CommonJS by esbuild before it runs, so it must avoid top-level `await`
+  and may import `@turbo/gen` for types only. A bundling failure is swallowed and resurfaces as an
+  unrelated-looking require error.
+- Keep `turbo` and `@turbo/gen` on the same version; `turbo gen` execs the matching `@turbo/gen`,
+  and a mismatch silently downloads a second copy through npx.

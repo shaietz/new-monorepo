@@ -1,0 +1,19 @@
+/** Options for {@link greeting}. */
+export interface GreetingOptions {
+  /** Rendered in front of the name. Defaults to `"Hello"`. */
+  salutation?: string;
+}
+
+/**
+ * Placeholder, so the package ships something real — with tests and coverage — from its first
+ * commit. Replace it; nothing outside this package imports it.
+ *
+ * @throws {TypeError} when `name` is blank.
+ */
+export function greeting(name: string, options: GreetingOptions = {}): string {
+  const trimmed = name.trim();
+
+  if (trimmed === "") throw new TypeError("greeting: name must not be blank");
+
+  return `${options.salutation ?? "Hello"}, ${trimmed}!`;
+}

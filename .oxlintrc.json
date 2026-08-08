@@ -48,6 +48,10 @@
     {
       "files": ["scripts/**"],
       "rules": { "no-console": "off", "node/no-sync": "off" }
+    },
+    {
+      "files": ["turbo/generators/**"],
+      "rules": { "no-console": "off", "node/no-sync": "off" }
     }
   ]
 }

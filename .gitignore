@@ -17,6 +17,9 @@ coverage
 
 # Turbo
 .turbo
+# `turbo gen` bundles turbo/generators/config.ts next to itself and removes it in a
+# `finally`; a Ctrl-C mid-prompt leaks one into the worktree.
+*.turbo-gen-bundled.cjs
 
 # Vercel
 .vercel
