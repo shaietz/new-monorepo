@@ -2,31 +2,55 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import sensible from "@fastify/sensible";
-import { serializerCompiler, validatorCompiler } from "@fastify/type-provider-zod";
-import underPressure from "@fastify/under-pressure";
 import fp from "fastify-plugin";
-import metricsModule from "fastify-metrics";
+import metrics from "fastify-metrics";
+import { serializerCompiler, validatorCompiler } from "@fastify/type-provider-zod";
 import { z } from "zod";
 import type { FastifyInstance, FastifyRequest } from "fastify";
+
 import type { BaseConfig } from "./env.ts";
+import { randomUUID } from "node:crypto";
+import type { IncomingMessage } from "node:http";
 
 export interface BasePluginOptions {
-  config: BaseConfig;
-  healthCheck?: () => Promise<boolean>;
+  readonly config: BaseConfig;
+  readonly healthCheck?: () => Promise<void>;
 }
 
-const RATE_LIMIT_EXEMPT = new Set(["/livez", "/readyz", "/metrics"]);
+export function requestId(req: IncomingMessage): string {
+  const header = req.headers["x-request-id"];
 
-const isExempt = (req: FastifyRequest) =>
-  RATE_LIMIT_EXEMPT.has(new URL(req.url, "http://localhost").pathname);
+  if (typeof header !== "string") {
+    return randomUUID();
+  }
 
-const StatusSchema = z.object({ status: z.literal("ok") });
+  return header.split(",", 1)[0]?.trim() || randomUUID();
+}
 
-const PRESSURE_EXEMPT = new Set(["/livez", "/metrics"]);
+const HEALTH_PATHS = new Set(["/livez", "/readyz"]);
+const METRICS_PATH = "/metrics";
 
 const pathOf = (url: string) => new URL(url, "http://localhost").pathname;
 
+const isRateLimitExempt = (request: FastifyRequest) =>
+  HEALTH_PATHS.has(pathOf(request.url)) || pathOf(request.url) === METRICS_PATH;
+
+const LiveSchema = z.object({
+  status: z.literal("ok"),
+});
+
+const ReadySchema = z.object({
+  status: z.literal("ok"),
+});
+
+const UnavailableSchema = z.object({
+  status: z.literal("unavailable"),
+});
+
 async function base(server: FastifyInstance, { config, healthCheck }: BasePluginOptions) {
+  server.setValidatorCompiler(validatorCompiler);
+  server.setSerializerCompiler(serializerCompiler);
+
   await server.register(sensible);
   await server.register(helmet);
 
@@ -42,43 +66,48 @@ async function base(server: FastifyInstance, { config, healthCheck }: BasePlugin
   await server.register(rateLimit, {
     max: config.RATE_LIMIT_MAX,
     timeWindow: config.RATE_LIMIT_WINDOW,
-    allowList: isExempt,
+    allowList: isRateLimitExempt,
   });
 
-  await server.register(metricsModule.default, {
-    endpoint: "/metrics",
+  await server.register(metrics.default, {
+    endpoint: METRICS_PATH,
     clearRegisterOnInit: true,
   });
 
-  await server.register(underPressure, {
-    maxEventLoopDelay: 1000,
-    maxEventLoopUtilization: 0.98,
-    exposeStatusRoute: false,
-    ...(healthCheck ? { healthCheck, healthCheckInterval: 5000 } : {}),
-    pressureHandler: (req, reply) => {
-      if (PRESSURE_EXEMPT.has(pathOf(req.url))) return;
-
-      reply.code(503).header("Retry-After", "10").send({
-        statusCode: 503,
-        error: "Service Unavailable",
-        message: "under pressure",
-      });
-    },
-  });
-
-  server.setValidatorCompiler(validatorCompiler);
-  server.setSerializerCompiler(serializerCompiler);
-
   server.get(
     "/livez",
-    { logLevel: "warn", schema: { response: { 200: StatusSchema } } },
+    {
+      logLevel: "warn",
+      schema: {
+        response: {
+          200: LiveSchema,
+        },
+      },
+    },
     async () => ({ status: "ok" }) as const,
   );
 
   server.get(
     "/readyz",
-    { logLevel: "warn", schema: { response: { 200: StatusSchema } } },
-    async () => ({ status: "ok" }) as const,
+    {
+      logLevel: "warn",
+      schema: {
+        response: { 200: ReadySchema, 503: UnavailableSchema },
+      },
+    },
+    async (_request, reply) => {
+      if (healthCheck) {
+        try {
+          await healthCheck();
+        } catch {
+          return reply.code(503).send({
+            status: "unavailable",
+          });
+        }
+      }
+
+      return { status: "ok" } as const;
+    },
   );
 }
 

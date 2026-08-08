@@ -1,5 +1,5 @@
 export { loadConfig, loggerOptions } from "./env.ts";
-export { basePlugin } from "./plugin.ts";
+export { basePlugin, requestId } from "./plugin.ts";
 export { startService } from "./start.ts";
 
 /** @public — services type their own config with this; nothing in here references it. */
