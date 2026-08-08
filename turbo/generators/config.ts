@@ -64,6 +64,22 @@ const ENVIRONMENTS: Record<PackageEnvironment, EnvironmentProfile> = {
 };
 
 /**
+ * Files in the fastify-service template that belong only to a service that opted into that store.
+ * `addMany` writes everything it globs, so an optional file is excluded from the glob rather than
+ * kept in a template directory of its own. Paths are relative to this file's directory.
+ */
+const STORE_FILES = {
+  redis: [
+    "templates/fastify-service/src/redis.ts.hbs",
+    "templates/fastify-service/src/redis.test.ts.hbs",
+  ],
+  postgres: [
+    "templates/fastify-service/src/postgres.ts.hbs",
+    "templates/fastify-service/src/postgres.test.ts.hbs",
+  ],
+} as const;
+
+/**
  * Rejects a name that is malformed or already taken. Both `apps/` and `packages/` are checked from
  * every generator: each workspace's Vitest `test.name` is the bare name even for scoped packages,
  * so `apps/foo` and `@repo/foo` would collide in the root run that aggregates `apps/*` and
@@ -193,17 +209,42 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         default: String(nextFreePort(root)),
         validate: makePortValidator(root),
       },
-    ],
-    actions: [
       {
-        type: "addMany",
-        destination: "apps/{{ dashCase name }}",
-        base: "templates/fastify-service",
-        templateFiles: "templates/fastify-service/**/*",
-        globOptions: { dot: true },
+        type: "confirm",
+        name: "redis",
+        message: "Add a Redis client (@fastify/redis)?",
+        default: false,
       },
-      { type: "install" },
+      {
+        type: "confirm",
+        name: "postgres",
+        message: "Add a Postgres client (@fastify/postgres)?",
+        default: false,
+      },
     ],
+    actions: (answers) => {
+      const { redis, postgres } = answers as { redis: boolean; postgres: boolean };
+
+      return [
+        {
+          type: "addMany",
+          destination: "apps/{{ dashCase name }}",
+          base: "templates/fastify-service",
+          templateFiles: "templates/fastify-service/**/*",
+          globOptions: {
+            dot: true,
+            ignore: [
+              ...(redis ? [] : STORE_FILES.redis),
+              ...(postgres ? [] : STORE_FILES.postgres),
+            ],
+          },
+          // Handlebars reads `redis` and `postgres` straight off the answers, so only the derived
+          // flag has to be passed — and plop drops `data` keys that collide with an answer.
+          data: { hasDataStore: redis || postgres },
+        },
+        { type: "install" },
+      ];
+    },
   });
 
   plop.setGenerator("package", {

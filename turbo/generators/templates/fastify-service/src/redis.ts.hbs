@@ -1,0 +1,25 @@
+import type { FastifyRedisPluginOptions } from "@fastify/redis";
+import type { FastifyInstance } from "fastify";
+
+/**
+ * The pre-built-client half of `@fastify/redis`'s options union. `Extract` rather than an index
+ * access because the other half has no `client` property at all.
+ */
+export type RedisClient = Extract<FastifyRedisPluginOptions, { client: unknown }>["client"];
+
+export function redisOptions(
+  config: { REDIS_URL: string },
+  client?: RedisClient,
+): FastifyRedisPluginOptions {
+  // An injected client's lifetime belongs to whoever built it, so don't close it on shutdown.
+  if (client) return { client, closeClient: false };
+
+  // Without this ioredis queues commands while the connection is down instead of rejecting them,
+  // and a /readyz request would hang rather than report the outage.
+  return { url: config.REDIS_URL, enableOfflineQueue: false };
+}
+
+/** Throws when Redis is unreachable, which is how `basePlugin` learns the service is not ready. */
+export async function checkRedis(server: FastifyInstance): Promise<void> {
+  await server.redis.ping();
+}

@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "./app.ts";
+{{#if hasDataStore}}
+import type { ServerOverrides } from "./app.ts";
+{{/if}}
+{{#if postgres}}
+import type { PgModule } from "./postgres.ts";
+{{/if}}
+{{#if redis}}
+import type { RedisClient } from "./redis.ts";
+{{/if}}
 
 const started: FastifyInstance[] = [];
 
@@ -8,11 +17,52 @@ afterEach(async () => {
   await Promise.all(started.splice(0).map((server) => server.close()));
 });
 
+{{#if redis}}
+/** A client already reporting "ready" is one `@fastify/redis` registers without connecting. */
+function redisStub(ping: () => Promise<string>): RedisClient {
+  return { status: "ready", ping, quit: async () => "OK" } as unknown as RedisClient;
+}
+
+{{/if}}
+{{#if postgres}}
+/** `@fastify/postgres` only does `new pg.Pool(options)`, so a stand-in module is enough. */
+function postgresStub(query: () => Promise<unknown>): PgModule {
+  class Pool {
+    query = query;
+    connect = async () => ({ query, release: () => {} });
+    end = (done?: () => void) => {
+      done?.();
+      return Promise.resolve();
+    };
+  }
+
+  return { Pool } as unknown as PgModule;
+}
+
+{{/if}}
+{{#if hasDataStore}}
+/** Healthy stand-ins, so the suite needs nothing running, unless a test overrides one. */
+async function build(overrides: ServerOverrides = {}) {
+  const server = await buildServer({
+{{#if redis}}
+    redis: redisStub(async () => "PONG"),
+{{/if}}
+{{#if postgres}}
+    postgres: postgresStub(async () => ({ rows: [] })),
+{{/if}}
+    ...overrides,
+  });
+
+  started.push(server);
+  return server;
+}
+{{else}}
 async function build() {
   const server = await buildServer();
   started.push(server);
   return server;
 }
+{{/if}}
 
 describe("GET /ping", () => {
   it("returns pong", async () => {
@@ -67,3 +117,40 @@ describe("request ids", () => {
     expect(res.json().id).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
+{{#if hasDataStore}}
+
+describe("GET /readyz", () => {
+  it("is ready while the data stores answer", async () => {
+    const server = await build();
+
+    expect((await server.inject({ url: "/readyz" })).statusCode).toBe(200);
+  });
+{{#if redis}}
+
+  it("is unavailable when Redis stops answering", async () => {
+    const server = await build({
+      redis: redisStub(async () => {
+        throw new Error("connection refused");
+      }),
+    });
+
+    expect((await server.inject({ url: "/readyz" })).statusCode).toBe(503);
+    // Only readiness is affected — nothing sheds ordinary traffic.
+    expect((await server.inject({ url: "/ping" })).statusCode).toBe(200);
+  });
+{{/if}}
+{{#if postgres}}
+
+  it("is unavailable when Postgres stops answering", async () => {
+    const server = await build({
+      postgres: postgresStub(async () => {
+        throw new Error("connection refused");
+      }),
+    });
+
+    expect((await server.inject({ url: "/readyz" })).statusCode).toBe(503);
+    expect((await server.inject({ url: "/ping" })).statusCode).toBe(200);
+  });
+{{/if}}
+});
+{{/if}}

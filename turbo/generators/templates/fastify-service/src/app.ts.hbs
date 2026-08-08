@@ -1,9 +1,55 @@
+{{#if postgres}}
+import fastifyPostgres from "@fastify/postgres";
+{{/if}}
+{{#if redis}}
+import fastifyRedis from "@fastify/redis";
+{{/if}}
 import fastify from "fastify";
+{{#if hasDataStore}}
+import { basePlugin, loadConfig, loggerOptions, requestId, z } from "@repo/fastify-base";
+{{else}}
 import { basePlugin, loadConfig, loggerOptions, requestId } from "@repo/fastify-base";
+{{/if}}
+{{#if postgres}}
+import { checkPostgres, postgresOptions } from "./postgres.ts";
+{{/if}}
+{{#if redis}}
+import { checkRedis, redisOptions } from "./redis.ts";
+{{/if}}
+{{#if postgres}}
+import type { PgModule } from "./postgres.ts";
+{{/if}}
+{{#if redis}}
+import type { RedisClient } from "./redis.ts";
+{{/if}}
 
+{{#if hasDataStore}}
+export const config = loadConfig({
+{{#if postgres}}
+  DATABASE_URL: z.url().default("postgres://localhost/{{ dashCase name }}"),
+  PG_POOL_MAX: z.coerce.number().min(1).default(10),
+{{/if}}
+{{#if redis}}
+  REDIS_URL: z.url().default("redis://localhost:6379"),
+{{/if}}
+});
+
+/** Clients standing in for the ones `config` would otherwise dial. Tests inject through here. */
+export interface ServerOverrides {
+{{#if postgres}}
+  postgres?: PgModule;
+{{/if}}
+{{#if redis}}
+  redis?: RedisClient;
+{{/if}}
+}
+
+export async function buildServer(overrides: ServerOverrides) {
+{{else}}
 export const config = loadConfig();
 
 export async function buildServer() {
+{{/if}}
   const server = fastify({
     logger: loggerOptions(config),
     trustProxy: config.TRUST_PROXY,
@@ -11,7 +57,34 @@ export async function buildServer() {
     genReqId: requestId,
   });
 
+{{#if hasDataStore}}
+  // Before basePlugin, so the clients are decorated on `server` by the time /readyz probes them.
+{{/if}}
+{{#if redis}}
+  await server.register(fastifyRedis, redisOptions(config, overrides.redis));
+{{/if}}
+{{#if postgres}}
+  await server.register(fastifyPostgres, postgresOptions(config, overrides.postgres));
+{{/if}}
+{{#if hasDataStore}}
+
+  await server.register(basePlugin, {
+    config,
+{{#if redis}}
+{{#if postgres}}
+    healthCheck: async () => {
+      await Promise.all([checkRedis(server), checkPostgres(server)]);
+    },
+{{else}}
+    healthCheck: () => checkRedis(server),
+{{/if}}
+{{else}}
+    healthCheck: () => checkPostgres(server),
+{{/if}}
+  });
+{{else}}
   await server.register(basePlugin, { config });
+{{/if}}
 
   server.get("/ping", async () => {
     return "pong\n";

@@ -6,6 +6,7 @@
     "apps/*",
     "packages/*"
   ],
+  "type": "module",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
@@ -16,6 +17,7 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage",
     "check-types": "turbo run check-types",
     "syncpack": "syncpack lint",
     "prepare": "husky || true",

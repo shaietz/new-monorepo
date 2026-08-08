@@ -1,4 +1,9 @@
 import { startService } from "@repo/fastify-base";
 import { buildServer, config } from "./app.ts";
 
+{{#if hasDataStore}}
+// No overrides in production — the argument exists so tests can inject stand-in clients.
+await startService(await buildServer({}), config);
+{{else}}
 await startService(await buildServer(), config);
+{{/if}}

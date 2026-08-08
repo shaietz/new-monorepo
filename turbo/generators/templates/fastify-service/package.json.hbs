@@ -12,12 +12,22 @@
     "check-types": "tsc"
   },
   "dependencies": {
+{{#if postgres}}
+    "@fastify/postgres": "^6.1.0",
+{{/if}}
+{{#if redis}}
+    "@fastify/redis": "^8.0.0",
+{{/if}}
     "@repo/fastify-base": "*",
-    "fastify": "^5.11.2"
+    "fastify": "^5.11.2"{{#if postgres}},
+    "pg": "^8.23.0"{{/if}}
   },
   "devDependencies": {
     "@repo/typescript-config": "*",
     "@types/node": "^24.13.3",
+{{#if postgres}}
+    "@types/pg": "^8.21.0",
+{{/if}}
     "@vitest/coverage-v8": "^4.1.10",
     "typescript": "~6.0.2",
     "vitest": "^4.1.10"

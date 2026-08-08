@@ -40,6 +40,33 @@ export const config = loadConfig({
 `config` is fully typed from that call. **Coercion is explicit** — `process.env` values are always
 strings, so a plain `z.number()` always fails; use `z.coerce.number()` or `z.stringbool()`.
 
+{{#if hasDataStore}}
+## Data stores
+
+{{#if redis}}
+[`@fastify/redis`](https://github.com/fastify/fastify-redis) dials `REDIS_URL` and decorates the
+server with `server.redis`, an [ioredis](https://github.com/redis/ioredis) client that closes with
+it. It **waits for the connection during registration**, so a Redis that is unreachable at boot
+fails the service outright with `ERR_AVVIO_PLUGIN_TIMEOUT` rather than starting it up degraded.
+`enableOfflineQueue` is off, so a command issued during a later outage rejects instead of queueing
+until the connection returns — without that, a `/readyz` request would hang rather than report.
+
+{{/if}}
+{{#if postgres}}
+[`@fastify/postgres`](https://github.com/fastify/fastify-postgres) builds a `pg` pool from
+`DATABASE_URL` and `PG_POOL_MAX`, and decorates the server with `server.pg` — `query`, `connect`,
+`transact`, and the pool itself. The pool is lazy, so nothing connects until the first query, and
+`connectionTimeoutMillis` is set because pg otherwise waits forever for one.
+
+{{/if}}
+The data-store clients register **before** `basePlugin`, whose `healthCheck` probes them from
+`/readyz`: readiness reports 503 while a store is unreachable and recovers on its own once it is
+back. Ordinary traffic is untouched — `/ping` and `/livez` keep answering 200.
+
+`buildServer` takes a `ServerOverrides` argument so tests can inject stand-in clients; that is why
+`src/app.test.ts` runs with nothing installed. Production passes `{}`.
+
+{{/if}}
 ## Endpoints
 
 `GET /ping` is this service's own. The rest come from `basePlugin`:

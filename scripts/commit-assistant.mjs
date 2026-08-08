@@ -8,7 +8,9 @@ import czAdapter from "cz-conventional-changelog";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(moduleDir, "..");
-const commitlintBin = path.join(rootDir, "node_modules", "@commitlint", "cli", "cli.js");
+// Resolved rather than joined onto `rootDir/node_modules`, which assumes npm hoisted it to the
+// top level. This also keeps the dependency visible to `npm run knip`.
+const commitlintBin = fileURLToPath(import.meta.resolve("@commitlint/cli/cli.js"));
 const messageFile = process.argv[2];
 
 function runCommitlint() {

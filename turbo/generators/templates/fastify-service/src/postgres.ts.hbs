@@ -1,0 +1,31 @@
+import type * as Pg from "pg";
+import type { PostgresPluginOptions } from "@fastify/postgres";
+import type { FastifyInstance } from "fastify";
+
+/**
+ * The `pg` module itself. Imported by name rather than pulled off the plugin's options so `pg`
+ * stays a visible dependency — nothing else here references it, and knip would call it unused.
+ */
+export type PgModule = typeof Pg;
+
+export function postgresOptions(
+  config: { DATABASE_URL: string; PG_POOL_MAX: number },
+  pgModule?: PgModule,
+): PostgresPluginOptions {
+  const options: PostgresPluginOptions = {
+    connectionString: config.DATABASE_URL,
+    max: config.PG_POOL_MAX,
+    // pg waits forever by default, and a probe that never settles reads as healthy.
+    connectionTimeoutMillis: 2000,
+  };
+
+  // Injected in tests so the suite needs no database; production takes the pool pg builds itself.
+  if (pgModule) return { ...options, pg: pgModule };
+
+  return options;
+}
+
+/** Throws when Postgres is unreachable, which is how `basePlugin` learns the service is not ready. */
+export async function checkPostgres(server: FastifyInstance): Promise<void> {
+  await server.pg.query("SELECT 1");
+}

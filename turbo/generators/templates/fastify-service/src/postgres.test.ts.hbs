@@ -1,0 +1,74 @@
+import fastifyPostgres from "@fastify/postgres";
+import fastify from "fastify";
+import { afterEach, describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
+import { checkPostgres, postgresOptions } from "./postgres.ts";
+import type { PgModule } from "./postgres.ts";
+
+const config = { DATABASE_URL: "postgres://localhost/test", PG_POOL_MAX: 10 };
+
+const started: FastifyInstance[] = [];
+
+afterEach(async () => {
+  await Promise.all(started.splice(0).map((server) => server.close()));
+});
+
+/**
+ * `@fastify/postgres` only does `new pg.Pool(options)` at registration, so a stand-in module is
+ * all this suite needs to run with no database. `end` takes the callback its onClose hook passes;
+ * returning a promise as well keeps `server.close()` from hanging either way.
+ */
+function stub(query: () => Promise<unknown>): PgModule {
+  class Pool {
+    query = query;
+    connect = async () => ({ query, release: () => {} });
+    end = (done?: () => void) => {
+      done?.();
+      return Promise.resolve();
+    };
+  }
+
+  return { Pool } as unknown as PgModule;
+}
+
+async function build(pgModule: PgModule) {
+  const server = fastify({ logger: false });
+  await server.register(fastifyPostgres, postgresOptions(config, pgModule));
+
+  started.push(server);
+  return server;
+}
+
+describe("postgresOptions", () => {
+  it("dials DATABASE_URL when no module is injected", () => {
+    expect(postgresOptions(config)).toEqual({
+      connectionString: "postgres://localhost/test",
+      max: 10,
+      connectionTimeoutMillis: 2000,
+    });
+  });
+
+  it("hands an injected pg module to the plugin", () => {
+    const pgModule = stub(async () => ({ rows: [] }));
+
+    expect(postgresOptions(config, pgModule).pg).toBe(pgModule);
+  });
+});
+
+describe("checkPostgres", () => {
+  it("resolves while Postgres answers", async () => {
+    const server = await build(stub(async () => ({ rows: [{ ok: 1 }] })));
+
+    await expect(checkPostgres(server)).resolves.toBeUndefined();
+  });
+
+  it("rejects when the query fails", async () => {
+    const server = await build(
+      stub(async () => {
+        throw new Error("connection refused");
+      }),
+    );
+
+    await expect(checkPostgres(server)).rejects.toThrow("connection refused");
+  });
+});

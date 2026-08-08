@@ -3,7 +3,8 @@
   "includeEntryExports": true,
   "workspaces": {
     ".": {
-      "entry": ["turbo/generators/config.ts"]
+      "entry": ["turbo/generators/config.ts", "scripts/commit-assistant.mjs"],
+      "ignoreBinaries": ["chcp"]
     }
   }
 }

@@ -4,7 +4,8 @@ import { z } from "zod";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import type { FastifyInstance } from "fastify";
 import { loadConfig, loggerOptions } from "./env.ts";
-import { basePlugin } from "./plugin.ts";
+import { basePlugin, requestId } from "./plugin.ts";
+import type { IncomingMessage } from "node:http";
 
 const started: FastifyInstance[] = [];
 
@@ -13,7 +14,12 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-async function buildTestServer(healthCheck?: () => Promise<boolean>) {
+/** Reports an outage the only way `basePlugin` recognises: by rejecting. */
+const unhealthy = async () => {
+  throw new Error("dependency down");
+};
+
+async function buildTestServer(healthCheck?: () => Promise<void>) {
   const config = loadConfig();
   const server = fastify({ logger: loggerOptions(config) });
 
@@ -53,17 +59,18 @@ describe("basePlugin", () => {
     expect(res.body).not.toContain("FST_ERR_FAILED_ERROR_SERIALIZATION");
   });
 
-  it("sheds load on service routes when unhealthy", async () => {
-    const server = await buildTestServer(async () => false);
+  /** Readiness is the only thing the health check gates — nothing sheds ordinary traffic. */
+  it("keeps service routes answering while unhealthy", async () => {
+    const server = await buildTestServer(unhealthy);
 
     const ping = await server.inject({ url: "/ping" });
 
-    expect(ping.statusCode).toBe(503);
-    expect(ping.headers["retry-after"]).toBe("10");
+    expect(ping.statusCode).toBe(200);
+    expect(ping.body).toBe("pong\n");
   });
 
   it("keeps liveness and metrics answering while unhealthy", async () => {
-    const server = await buildTestServer(async () => false);
+    const server = await buildTestServer(unhealthy);
 
     expect((await server.inject({ url: "/livez" })).statusCode).toBe(200);
     expect((await server.inject({ url: "/livez" })).json()).toEqual({ status: "ok" });
@@ -115,9 +122,11 @@ describe("basePlugin", () => {
   });
 
   it("fails readiness when the health check fails", async () => {
-    const server = await buildTestServer(async () => false);
+    const server = await buildTestServer(unhealthy);
+    const res = await server.inject({ url: "/readyz" });
 
-    expect((await server.inject({ url: "/readyz" })).statusCode).toBe(503);
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ status: "unavailable" });
   });
 
   it("sets security headers", async () => {
@@ -217,5 +226,39 @@ describe("basePlugin", () => {
     const second = await buildTestServer();
 
     expect((await second.inject({ url: "/livez" })).statusCode).toBe(200);
+  });
+});
+
+const UUID = /^[0-9a-f-]{36}$/;
+
+/** `genReqId` is handed the raw Node request, long before Fastify has built anything around it. */
+const reqWith = (header?: string | string[]) =>
+  ({ headers: header === undefined ? {} : { "x-request-id": header } }) as IncomingMessage;
+
+describe("requestId", () => {
+  it("propagates an upstream request id", () => {
+    expect(requestId(reqWith("upstream-123"))).toBe("upstream-123");
+  });
+
+  it("takes the first value when x-request-id is repeated", () => {
+    // Node joins duplicate headers into "first,second" before anything else sees them.
+    expect(requestId(reqWith("first,second"))).toBe("first");
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(requestId(reqWith("  spaced  "))).toBe("spaced");
+  });
+
+  it("generates an id when the header is absent", () => {
+    expect(requestId(reqWith())).toMatch(UUID);
+  });
+
+  it("generates an id when the header is empty", () => {
+    expect(requestId(reqWith("  "))).toMatch(UUID);
+  });
+
+  /** Node hands over an array for headers it does not collapse, which is not a usable id. */
+  it("generates an id when the header arrives as an array", () => {
+    expect(requestId(reqWith(["first", "second"]))).toMatch(UUID);
   });
 });

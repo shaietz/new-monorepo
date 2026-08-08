@@ -102,11 +102,11 @@ npx turbo gen fastify-service
 npx turbo gen package
 ```
 
-| Generator         | Creates           | Tags                  | Prompts                             |
-| ----------------- | ----------------- | --------------------- | ----------------------------------- |
-| `react-app`       | `apps/<name>`     | `["app","browser"]`   | name                                |
-| `fastify-service` | `apps/<name>`     | `["app","node"]`      | name, port (next free is suggested) |
-| `package`         | `packages/<name>` | environment-dependent | name, environment                   |
+| Generator         | Creates           | Tags                  | Prompts                                                |
+| ----------------- | ----------------- | --------------------- | ------------------------------------------------------ |
+| `react-app`       | `apps/<name>`     | `["app","browser"]`   | name                                                   |
+| `fastify-service` | `apps/<name>`     | `["app","node"]`      | name, port (next free is suggested), redis?, postgres? |
+| `package`         | `packages/<name>` | environment-dependent | name, environment                                      |
 
 `package` asks where the code runs, which picks the tsconfig base and the boundary tag:
 
@@ -126,8 +126,25 @@ exist under `apps/` **or** `packages/`: the two share a namespace because a work
 `ENV PORT`, `EXPOSE` and the healthcheck target in the generated Dockerfile, so the image's declared
 port is the one it actually listens on.
 
+It also asks whether the service needs a Redis client or a Postgres client — independently, so you
+can have neither, either, or both. Saying yes adds the dependency, the env vars, a `src/<store>.ts`
+holding the connection options and a health probe, its tests, and a `healthCheck` wired into
+`/readyz` through `basePlugin`. Saying no to both produces exactly what the generator produced
+before the options existed.
+
+| Answer     | Adds                                                                       |
+| ---------- | -------------------------------------------------------------------------- |
+| `redis`    | `@fastify/redis` + `REDIS_URL`, decorating the server with `server.redis`. |
+| `postgres` | `@fastify/postgres` + `pg`, `DATABASE_URL`, `PG_POOL_MAX` → `server.pg`.   |
+
+`buildServer` then takes a `ServerOverrides` argument so tests can inject stand-in clients — which
+is what lets a generated service's suite run with no Redis or Postgres anywhere. Note that
+`@fastify/redis` waits for its connection during registration, so a service with Redis enabled will
+not start at all while Redis is down.
+
 Answers can be passed positionally for scripting, in prompt order:
-`npx turbo gen fastify-service --args orders 8082`. Validation still runs.
+`npx turbo gen fastify-service --args orders 8082 no yes`. Confirmations take `yes`/`no` (or
+`true`/`false`), and `_` in any position means "ask me for this one". Validation still runs.
 
 Nothing at the root needs editing afterwards. `.oxlintrc.json`, `turbo.json`, `knip.json`, the root
 `vitest.config.ts` and the `Jenkinsfile` all pick the new workspace up by glob and convention.
@@ -144,6 +161,15 @@ Nothing at the root needs editing afterwards. `.oxlintrc.json`, `turbo.json`, `k
   and will happily reflow a template into rubble.
 - Content that needs a literal `{{` has to escape it as `\{{`, or sit inside a
   `{{{{raw}}}}…{{{{/raw}}}}` block.
+- Optional files — `src/redis.ts.hbs` and friends — live in the same template directory as
+  everything else and are dropped from `globOptions.ignore` when the answer is no. `addMany` writes
+  everything it globs, so filtering the glob is what makes a file conditional.
+- Handlebars sees the prompt answers directly, so a template can say `{{#if redis}}`. Anything
+  derived has to come through an action's `data`, and plop **silently drops `data` keys that collide
+  with an answer** and deletes the rest once the action finishes. There is no `or`/`and` helper
+  registered, which is why `hasDataStore` is computed in `config.ts` rather than in the template.
+- Generated output is checked by oxfmt even though templates are not, so a conditional block has to
+  render the way oxfmt would format it — an array that fits on one line must be written on one line.
 - Third-party dependency versions in `package.json.hbs` must match the rest of the repo or
   `npm run syncpack` fails on the next generated workspace. Bump them alongside the repo's.
 - `config.ts` is bundled to CommonJS by esbuild before it runs, so it must avoid top-level `await`

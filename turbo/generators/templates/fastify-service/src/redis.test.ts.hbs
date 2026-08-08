@@ -1,0 +1,64 @@
+import fastifyRedis from "@fastify/redis";
+import fastify from "fastify";
+import { afterEach, describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
+import { checkRedis, redisOptions } from "./redis.ts";
+import type { RedisClient } from "./redis.ts";
+
+const config = { REDIS_URL: "redis://localhost:6379" };
+
+const started: FastifyInstance[] = [];
+
+afterEach(async () => {
+  await Promise.all(started.splice(0).map((server) => server.close()));
+});
+
+/**
+ * `@fastify/redis` calls back immediately for a client already reporting "ready", skipping the
+ * connection it would otherwise block registration on. That is what lets this suite run with no
+ * Redis anywhere.
+ */
+function stub(ping: () => Promise<string>): RedisClient {
+  return { status: "ready", ping, quit: async () => "OK" } as unknown as RedisClient;
+}
+
+async function build(client: RedisClient) {
+  const server = fastify({ logger: false });
+  await server.register(fastifyRedis, redisOptions(config, client));
+
+  started.push(server);
+  return server;
+}
+
+describe("redisOptions", () => {
+  it("dials REDIS_URL when no client is injected", () => {
+    expect(redisOptions(config)).toEqual({
+      url: "redis://localhost:6379",
+      enableOfflineQueue: false,
+    });
+  });
+
+  it("passes an injected client through without taking ownership of it", () => {
+    const client = stub(async () => "PONG");
+
+    expect(redisOptions(config, client)).toEqual({ client, closeClient: false });
+  });
+});
+
+describe("checkRedis", () => {
+  it("resolves while Redis answers", async () => {
+    const server = await build(stub(async () => "PONG"));
+
+    await expect(checkRedis(server)).resolves.toBeUndefined();
+  });
+
+  it("rejects when the ping fails", async () => {
+    const server = await build(
+      stub(async () => {
+        throw new Error("connection refused");
+      }),
+    );
+
+    await expect(checkRedis(server)).rejects.toThrow("connection refused");
+  });
+});
