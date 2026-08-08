@@ -15,9 +15,11 @@ apps/
 packages/
   @repo/fastify-base        env validation, security, health,        [node]
                             metrics, graceful shutdown
-  @repo/schemas             Zod schemas shared client <-> server     [isomorphic]
   @repo/typescript-config   base / node / react / library tsconfigs  [config]
 ```
+
+The `isomorphic` tag has no members yet. It is the slot for code shared between a client and a
+service — Zod schemas being the obvious case — and `library.json` is the tsconfig to build it on.
 
 `apps/client` and `apps/server` are deliberately bare. They are the sources the `turbo gen`
 templates will be cut from, so anything added to them lands in every future app.

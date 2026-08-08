@@ -1,0 +1,15 @@
+# The build context is the repo root, so everything an image doesn't need is
+# excluded here. Keep package-lock.json — `turbo prune` needs it.
+**/node_modules
+**/dist
+**/coverage
+**/.turbo
+**/out
+.git
+.github
+.husky
+**/.env
+**/*.log
+**/.DS_Store
+**/Dockerfile
+.dockerignore

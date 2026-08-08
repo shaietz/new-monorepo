@@ -1,7 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import App from "./App";
+import { resetConfig, setConfig } from "./config";
+
+afterEach(resetConfig);
 
 describe("App", () => {
   it("renders the heading", () => {
@@ -9,13 +12,21 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "client" })).toBeInTheDocument();
   });
 
-  it("toggles the details on click", async () => {
+  it("shows the configured API url on click", async () => {
+    setConfig({ API_URL: "https://api.test" });
     render(<App />);
-    expect(screen.queryByText("Replace this with the app.")).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Show details" }));
 
-    expect(screen.getByText("Replace this with the app.")).toBeInTheDocument();
+    expect(screen.getByText("API: https://api.test")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument();
+  });
+
+  it("says so when no API url is configured", async () => {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Show details" }));
+
+    expect(screen.getByText("API: (not configured)")).toBeInTheDocument();
   });
 });

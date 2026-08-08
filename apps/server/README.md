@@ -65,7 +65,8 @@ server
   );
 ```
 
-Schemas shared with a client belong in `@repo/schemas`, so both sides agree on one definition.
+A schema a client also needs belongs in a shared workspace package tagged `isomorphic`, so both
+sides agree on one definition rather than drifting apart.
 
 ## Boundaries
 

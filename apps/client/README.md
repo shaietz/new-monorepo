@@ -17,6 +17,64 @@ A React 19 + Vite single-page app.
 Run them from the repo root with `npm run <script> -w client`, or through turbo
 (`npx turbo run test --filter=client`).
 
+## Configuration
+
+Config is read at **runtime**, not compiled in, so one built image serves every environment.
+
+`src/main.tsx` fetches `/config.json` and publishes it with `setConfig` before the first render, so
+no component ever sees a half-configured app. The file comes from `public/config.json` — served at `/`
+by the dev server, copied into `dist/` by the build, and in a cluster **replaced by a ConfigMap
+mounted over `/usr/share/nginx/html/config.json`**. Changing configuration is a chart change, not a
+rebuild.
+
+Locally, edit `public/config.json`:
+
+```json
+{ "API_URL": "http://localhost:8080" }
+```
+
+Adding a key means two edits: a field on `ConfigSchema` in `src/config.ts`, and the key in
+`public/config.json`. The image itself never changes.
+
+`config.json` is **validated with Zod**, the same way the server validates its environment. Each
+field carries its own `.default()`, so an absent key or an absent file still yields a usable object.
+A file that is present but does not match the schema **throws** — a deployment mistake should be
+loud, and a client silently pointing at the wrong API is worse than one that refuses to start.
+`API_URL` accepts an absolute URL, a same-origin path like `/api`, or empty.
+
+Read it anywhere with `getConfig()` — no prop drilling, and no provider to wrap things in:
+
+```ts
+import { getConfig } from "./config.ts";
+
+fetch(`${getConfig().API_URL}/things`);
+```
+
+This is module state rather than React context on purpose. Config is a genuine singleton — one
+immutable value, loaded once before the first render — and it is needed by plain modules as well as
+components. An API client building request URLs cannot call a hook, so context would force a second
+mechanism alongside it. Context exists to _avoid_ singletons; this is the case where you want one.
+
+The trade-off is that config is an invisible dependency, and module state outlives a test. Anything
+that calls `setConfig` should reset:
+
+```tsx
+afterEach(resetConfig);
+
+setConfig({ API_URL: "https://api.test" });
+render(<App />);
+```
+
+One caveat if this app ever gains server-side rendering: module state is shared across every request
+in a process, so config would have to move into context at that point. A static bundle has no such
+sharing.
+
+`import.meta.env` is deliberately unused — `VITE_*` variables are inlined at build time, which is
+exactly the coupling this setup exists to avoid.
+
+**Everything here is public.** It is served to browsers and readable in devtools. Secrets belong on
+a service, never in this app.
+
 ## Tests
 
 Config lives in the `test` block of `vite.config.ts`, not a separate `vitest.config.ts`, so tests

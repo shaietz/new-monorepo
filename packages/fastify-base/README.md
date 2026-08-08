@@ -40,17 +40,20 @@ export async function buildServer() {
 Route schemas are Zod, with request and reply types inferred:
 
 ```ts
-import { CreateUserSchema, UserSchema } from "@repo/schemas";
-import type { ZodTypeProvider } from "@repo/fastify-base";
+import { z, type ZodTypeProvider } from "@repo/fastify-base";
+
+const CreateUser = z.object({ email: z.email(), displayName: z.string().min(1) });
+const User = CreateUser.extend({ id: z.uuid() });
 
 server
   .withTypeProvider<ZodTypeProvider>()
-  .post(
-    "/users",
-    { schema: { body: CreateUserSchema, response: { 201: UserSchema } } },
-    async (req, reply) => reply.code(201).send({ id: randomUUID(), ...req.body }),
+  .post("/users", { schema: { body: CreateUser, response: { 201: User } } }, async (req, reply) =>
+    reply.code(201).send({ id: randomUUID(), ...req.body }),
   );
 ```
+
+Schemas a client also needs belong in a shared workspace package rather than inline here, so both
+sides agree on one definition.
 
 ```ts
 // src/index.ts
