@@ -44,6 +44,10 @@
     {
       "files": ["**/*.config.{ts,js,mts,mjs}"],
       "rules": { "no-console": "off" }
+    },
+    {
+      "files": ["scripts/**"],
+      "rules": { "no-console": "off", "node/no-sync": "off" }
     }
   ]
 }
