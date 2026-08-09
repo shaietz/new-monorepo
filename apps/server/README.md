@@ -26,7 +26,8 @@ tolerates it being absent, which is the normal case in CI.
 To add a service-specific variable, pass it to `loadConfig`:
 
 ```ts
-import { loadConfig, z } from "@repo/fastify-base";
+import { loadConfig } from "@repo/fastify-base";
+import { z } from "zod";
 
 export const config = loadConfig({
   DATABASE_URL: z.url(),
@@ -34,18 +35,26 @@ export const config = loadConfig({
 });
 ```
 
+Add `zod` to this workspace's dependencies when you do — `@repo/fastify-base` declares it as a peer
+rather than re-exporting it, so a service never ends up with a second copy.
+
 `config` is fully typed from that call. **Coercion is explicit** — `process.env` values are always
 strings, so a plain `z.number()` always fails; use `z.coerce.number()` or `z.stringbool()`.
+
+Give a variable a default only when the fallback is safe everywhere. A connection string is not:
+defaulting it to localhost turns "deployed without configuration" from a crash at boot into a
+service that starts and quietly fails readiness.
 
 ## Endpoints
 
 `GET /ping` is this service's own. The rest come from `basePlugin`:
 
-| Route      | Purpose                                                                 |
-| ---------- | ----------------------------------------------------------------------- |
-| `/livez`   | Liveness. Checks no dependencies, keeps answering 200 under pressure.   |
-| `/readyz`  | Readiness. 503 when the health check fails or the event loop saturates. |
-| `/metrics` | Prometheus exposition, including per-route request durations.           |
+| Route      | Purpose                                                                             |
+| ---------- | ----------------------------------------------------------------------------------- |
+| `/livez`   | Liveness. Checks no dependencies, and keeps answering 200 even while shutting down. |
+| `/readyz`  | Readiness. 503 when the health check fails, times out, or the service is draining.  |
+| `/metrics` | Prometheus exposition, including per-route request durations.                       |
+| `/docs`    | OpenAPI UI, only when `ENABLE_DOCS=true`.                                           |
 
 Point the load balancer at `/readyz`, not `/livez`.
 

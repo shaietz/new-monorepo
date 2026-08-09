@@ -5,51 +5,45 @@ import sensible from "@fastify/sensible";
 import fp from "fastify-plugin";
 import metrics from "fastify-metrics";
 import { serializerCompiler, validatorCompiler } from "@fastify/type-provider-zod";
-import { z } from "zod";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import type { BaseConfig } from "./env.ts";
-import { randomUUID } from "node:crypto";
-import type { IncomingMessage } from "node:http";
+import { registerDocs } from "./docs.ts";
+import { registerErrorHandlers } from "./errors.ts";
+import { registerHealth } from "./health.ts";
 
 export interface BasePluginOptions {
   readonly config: BaseConfig;
+  /** Labels log lines and titles the OpenAPI document. */
+  readonly name: string;
+  /** Rejects when a dependency is unreachable. Gates `/readyz` and nothing else. */
   readonly healthCheck?: () => Promise<void>;
 }
 
-export function requestId(req: IncomingMessage): string {
-  const header = req.headers["x-request-id"];
-
-  if (typeof header !== "string") {
-    return randomUUID();
-  }
-
-  return header.split(",", 1)[0]?.trim() || randomUUID();
-}
-
-const HEALTH_PATHS = new Set(["/livez", "/readyz"]);
 const METRICS_PATH = "/metrics";
 
-const pathOf = (url: string) => new URL(url, "http://localhost").pathname;
+/**
+ * Probes and scrapes have to answer while the service is shedding load — that is exactly when they
+ * matter. Matching on `routeOptions.url` gives the route pattern, already parsed by the router, so
+ * a query string cannot smuggle a request past the check.
+ */
+const UNLIMITED_ROUTES = new Set(["/livez", "/readyz", METRICS_PATH]);
 
 const isRateLimitExempt = (request: FastifyRequest) =>
-  HEALTH_PATHS.has(pathOf(request.url)) || pathOf(request.url) === METRICS_PATH;
+  UNLIMITED_ROUTES.has(request.routeOptions.url ?? "");
 
-const LiveSchema = z.object({
-  status: z.literal("ok"),
-});
-
-const ReadySchema = z.object({
-  status: z.literal("ok"),
-});
-
-const UnavailableSchema = z.object({
-  status: z.literal("unavailable"),
-});
-
-async function base(server: FastifyInstance, { config, healthCheck }: BasePluginOptions) {
+async function base(server: FastifyInstance, { config, name, healthCheck }: BasePluginOptions) {
   server.setValidatorCompiler(validatorCompiler);
   server.setSerializerCompiler(serializerCompiler);
+
+  // First, so the header is set even when a later hook short-circuits the request — a 429 from
+  // rate-limit still needs to be traceable back to its log lines.
+  server.addHook("onRequest", async (request, reply) => {
+    reply.header("x-request-id", request.id);
+  });
+
+  await registerDocs(server, config, name);
+  registerErrorHandlers(server, config);
 
   await server.register(sensible);
   await server.register(helmet);
@@ -69,46 +63,15 @@ async function base(server: FastifyInstance, { config, healthCheck }: BasePlugin
     allowList: isRateLimitExempt,
   });
 
+  // `.default` is deliberate: fastify-metrics is CJS, so Node's ESM interop makes the plain default
+  // import the whole `module.exports`. Fastify's `register` unwraps it at runtime — `tsc` does not.
   await server.register(metrics.default, {
     endpoint: METRICS_PATH,
+    // prom-client's registry is global; a second server in the same process throws without this.
     clearRegisterOnInit: true,
   });
 
-  server.get(
-    "/livez",
-    {
-      logLevel: "warn",
-      schema: {
-        response: {
-          200: LiveSchema,
-        },
-      },
-    },
-    async () => ({ status: "ok" }) as const,
-  );
-
-  server.get(
-    "/readyz",
-    {
-      logLevel: "warn",
-      schema: {
-        response: { 200: ReadySchema, 503: UnavailableSchema },
-      },
-    },
-    async (_request, reply) => {
-      if (healthCheck) {
-        try {
-          await healthCheck();
-        } catch {
-          return reply.code(503).send({
-            status: "unavailable",
-          });
-        }
-      }
-
-      return { status: "ok" } as const;
-    },
-  );
+  registerHealth(server, config, healthCheck);
 }
 
 export const basePlugin = fp(base, {

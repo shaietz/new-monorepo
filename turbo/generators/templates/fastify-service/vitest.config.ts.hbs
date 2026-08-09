@@ -5,6 +5,18 @@ export default defineConfig({
     name: "{{ name }}",
     environment: "node",
     include: ["src/**/*.{test,spec}.ts"],
+{{#if hasDataStore}}
+    // `loadConfig` runs at import and these have no defaults on purpose, so a service deployed
+    // without them fails at boot. The suite never dials either one — the clients are stubbed.
+    env: {
+{{#if postgres}}
+      DATABASE_URL: "postgres://localhost/{{ dashCase name }}",
+{{/if}}
+{{#if redis}}
+      REDIS_URL: "redis://localhost:6379",
+{{/if}}
+    },
+{{/if}}
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],

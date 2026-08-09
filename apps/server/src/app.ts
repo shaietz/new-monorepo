@@ -1,17 +1,15 @@
 import fastify from "fastify";
-import { basePlugin, loadConfig, loggerOptions, requestId } from "@repo/fastify-base";
+import { basePlugin, loadConfig, serverOptions } from "@repo/fastify-base";
+
+const SERVICE_NAME = "server";
 
 export const config = loadConfig();
 
-export async function buildServer() {
-  const server = fastify({
-    logger: loggerOptions(config),
-    trustProxy: config.TRUST_PROXY,
-    bodyLimit: config.BODY_LIMIT,
-    genReqId: requestId,
-  });
+/** `cfg` is a parameter so tests can build a server without stubbing the environment first. */
+export async function buildServer(cfg: typeof config = config) {
+  const server = fastify(serverOptions(cfg, SERVICE_NAME));
 
-  await server.register(basePlugin, { config });
+  await server.register(basePlugin, { config: cfg, name: SERVICE_NAME });
 
   server.get("/ping", async () => {
     return "pong\n";

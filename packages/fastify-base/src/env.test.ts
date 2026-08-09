@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { loadConfig, loggerOptions } from "./env.ts";
+import { loadConfig } from "./env.ts";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -14,7 +14,10 @@ describe("loadConfig", () => {
     expect(config.PORT).toBe(8080);
     expect(config.LOG_LEVEL).toBe("info");
     expect(config.SHUTDOWN_GRACE_MS).toBe(10_000);
+    expect(config.SHUTDOWN_DELAY_MS).toBe(5_000);
+    expect(config.HEALTH_TIMEOUT_MS).toBe(2_000);
     expect(config.TRUST_PROXY).toBe(false);
+    expect(config.ENABLE_DOCS).toBe(false);
   });
 
   it("does not fail when no .env file exists", () => {
@@ -56,6 +59,24 @@ describe("loadConfig", () => {
     expect(() => loadConfig()).toThrow(/LOG_LEVEL/);
   });
 
+  /**
+   * close-with-grace force-exits at the grace deadline. A drain that reaches it means the process
+   * is killed mid-drain, dropping the very connections the drain exists to protect.
+   */
+  it("rejects a shutdown delay that outlasts the grace period", () => {
+    vi.stubEnv("SHUTDOWN_GRACE_MS", "1000");
+    vi.stubEnv("SHUTDOWN_DELAY_MS", "1000");
+
+    expect(() => loadConfig()).toThrow(/SHUTDOWN_DELAY_MS/);
+  });
+
+  it("accepts a shutdown delay inside the grace period", () => {
+    vi.stubEnv("SHUTDOWN_GRACE_MS", "1000");
+    vi.stubEnv("SHUTDOWN_DELAY_MS", "999");
+
+    expect(loadConfig().SHUTDOWN_DELAY_MS).toBe(999);
+  });
+
   it("merges service-specific properties", () => {
     vi.stubEnv("DATABASE_URL", "postgres://localhost/app");
 
@@ -73,18 +94,5 @@ describe("loadConfig", () => {
     vi.stubEnv("DATABASE_URL", "not-a-url");
 
     expect(() => loadConfig({ DATABASE_URL: z.url() })).toThrow(/DATABASE_URL/);
-  });
-});
-
-describe("loggerOptions", () => {
-  it("disables logging under test", () => {
-    expect(loggerOptions(loadConfig())).toBe(false);
-  });
-
-  it("uses LOG_LEVEL otherwise", () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("LOG_LEVEL", "warn");
-
-    expect(loggerOptions(loadConfig())).toEqual({ level: "warn" });
   });
 });

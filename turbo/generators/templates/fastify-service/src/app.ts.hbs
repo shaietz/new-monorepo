@@ -5,10 +5,9 @@ import fastifyPostgres from "@fastify/postgres";
 import fastifyRedis from "@fastify/redis";
 {{/if}}
 import fastify from "fastify";
+import { basePlugin, loadConfig, serverOptions } from "@repo/fastify-base";
 {{#if hasDataStore}}
-import { basePlugin, loadConfig, loggerOptions, requestId, z } from "@repo/fastify-base";
-{{else}}
-import { basePlugin, loadConfig, loggerOptions, requestId } from "@repo/fastify-base";
+import { z } from "zod";
 {{/if}}
 {{#if postgres}}
 import { checkPostgres, postgresOptions } from "./postgres.ts";
@@ -23,14 +22,17 @@ import type { PgModule } from "./postgres.ts";
 import type { RedisClient } from "./redis.ts";
 {{/if}}
 
+const SERVICE_NAME = "{{ dashCase name }}";
+
 {{#if hasDataStore}}
+// No defaults: a service deployed without these should fail at boot, not quietly dial localhost.
 export const config = loadConfig({
 {{#if postgres}}
-  DATABASE_URL: z.url().default("postgres://localhost/{{ dashCase name }}"),
+  DATABASE_URL: z.url(),
   PG_POOL_MAX: z.coerce.number().min(1).default(10),
 {{/if}}
 {{#if redis}}
-  REDIS_URL: z.url().default("redis://localhost:6379"),
+  REDIS_URL: z.url(),
 {{/if}}
 });
 
@@ -44,32 +46,30 @@ export interface ServerOverrides {
 {{/if}}
 }
 
-export async function buildServer(overrides: ServerOverrides) {
+/** Both arguments exist for tests; production takes the defaults. */
+export async function buildServer(overrides: ServerOverrides = {}, cfg: typeof config = config) {
 {{else}}
 export const config = loadConfig();
 
-export async function buildServer() {
+/** `cfg` is a parameter so tests can build a server without stubbing the environment first. */
+export async function buildServer(cfg: typeof config = config) {
 {{/if}}
-  const server = fastify({
-    logger: loggerOptions(config),
-    trustProxy: config.TRUST_PROXY,
-    bodyLimit: config.BODY_LIMIT,
-    genReqId: requestId,
-  });
+  const server = fastify(serverOptions(cfg, SERVICE_NAME));
 
 {{#if hasDataStore}}
   // Before basePlugin, so the clients are decorated on `server` by the time /readyz probes them.
 {{/if}}
 {{#if redis}}
-  await server.register(fastifyRedis, redisOptions(config, overrides.redis));
+  await server.register(fastifyRedis, redisOptions(cfg, overrides.redis));
 {{/if}}
 {{#if postgres}}
-  await server.register(fastifyPostgres, postgresOptions(config, overrides.postgres));
+  await server.register(fastifyPostgres, postgresOptions(cfg, overrides.postgres));
 {{/if}}
 {{#if hasDataStore}}
 
   await server.register(basePlugin, {
-    config,
+    config: cfg,
+    name: SERVICE_NAME,
 {{#if redis}}
 {{#if postgres}}
     healthCheck: async () => {
@@ -83,7 +83,7 @@ export async function buildServer() {
 {{/if}}
   });
 {{else}}
-  await server.register(basePlugin, { config });
+  await server.register(basePlugin, { config: cfg, name: SERVICE_NAME });
 {{/if}}
 
   server.get("/ping", async () => {

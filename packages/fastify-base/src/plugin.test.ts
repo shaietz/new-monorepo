@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import type { FastifyInstance } from "fastify";
-import { loadConfig, loggerOptions } from "./env.ts";
-import { basePlugin, requestId } from "./plugin.ts";
-import type { IncomingMessage } from "node:http";
+import { loadConfig } from "./env.ts";
+import { basePlugin } from "./plugin.ts";
+import { serverOptions } from "./server-options.ts";
 
 const started: FastifyInstance[] = [];
 
@@ -14,16 +14,11 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-/** Reports an outage the only way `basePlugin` recognises: by rejecting. */
-const unhealthy = async () => {
-  throw new Error("dependency down");
-};
-
-async function buildTestServer(healthCheck?: () => Promise<void>) {
+async function buildTestServer() {
   const config = loadConfig();
-  const server = fastify({ logger: loggerOptions(config) });
+  const server = fastify(serverOptions(config, "test"));
 
-  await server.register(basePlugin, { config, ...(healthCheck ? { healthCheck } : {}) });
+  await server.register(basePlugin, { config, name: "test" });
   server.get("/ping", async () => "pong\n");
 
   started.push(server);
@@ -31,50 +26,14 @@ async function buildTestServer(healthCheck?: () => Promise<void>) {
 }
 
 describe("basePlugin", () => {
-  it("exposes liveness, readiness and metrics", async () => {
+  it("exposes metrics for the routes it has served", async () => {
     const server = await buildTestServer();
-
-    const livez = await server.inject({ url: "/livez" });
-    expect(livez.statusCode).toBe(200);
-    expect(livez.json()).toEqual({ status: "ok" });
 
     await server.inject({ url: "/ping" });
     const metrics = await server.inject({ url: "/metrics" });
 
     expect(metrics.statusCode).toBe(200);
     expect(metrics.body).toContain("http_request_duration_seconds");
-  });
-
-  /**
-   * Regression guard for the Zod serializer. Assert the body, not just the
-   * status: a mis-wired serializer surfaces as
-   * 500 FST_ERR_FAILED_ERROR_SERIALIZATION in the payload.
-   */
-  it("serialises /readyz without a schema conflict", async () => {
-    const server = await buildTestServer();
-    const res = await server.inject({ url: "/readyz" });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: "ok" });
-    expect(res.body).not.toContain("FST_ERR_FAILED_ERROR_SERIALIZATION");
-  });
-
-  /** Readiness is the only thing the health check gates — nothing sheds ordinary traffic. */
-  it("keeps service routes answering while unhealthy", async () => {
-    const server = await buildTestServer(unhealthy);
-
-    const ping = await server.inject({ url: "/ping" });
-
-    expect(ping.statusCode).toBe(200);
-    expect(ping.body).toBe("pong\n");
-  });
-
-  it("keeps liveness and metrics answering while unhealthy", async () => {
-    const server = await buildTestServer(unhealthy);
-
-    expect((await server.inject({ url: "/livez" })).statusCode).toBe(200);
-    expect((await server.inject({ url: "/livez" })).json()).toEqual({ status: "ok" });
-    expect((await server.inject({ url: "/metrics" })).statusCode).toBe(200);
   });
 
   it("validates and serialises routes with Zod schemas", async () => {
@@ -121,14 +80,6 @@ describe("basePlugin", () => {
     expect(res.json()).toEqual({ safe: "public" });
   });
 
-  it("fails readiness when the health check fails", async () => {
-    const server = await buildTestServer(unhealthy);
-    const res = await server.inject({ url: "/readyz" });
-
-    expect(res.statusCode).toBe(503);
-    expect(res.json()).toEqual({ status: "unavailable" });
-  });
-
   it("sets security headers", async () => {
     const server = await buildTestServer();
     const res = await server.inject({ url: "/ping" });
@@ -149,7 +100,44 @@ describe("basePlugin", () => {
     expect(res.json()).toMatchObject({ message: "finished" });
   });
 
-  it("leaves CORS disabled when no origin is configured", async () => {
+  it("allows a second server in the same process", async () => {
+    await buildTestServer();
+    const second = await buildTestServer();
+
+    expect((await second.inject({ url: "/livez" })).statusCode).toBe(200);
+  });
+});
+
+describe("request id header", () => {
+  it("echoes the id back so a client can correlate its own call", async () => {
+    const server = await buildTestServer();
+    const res = await server.inject({ url: "/ping", headers: { "x-request-id": "upstream-123" } });
+
+    expect(res.headers["x-request-id"]).toBe("upstream-123");
+  });
+
+  it("echoes a generated id when the caller sent none", async () => {
+    const server = await buildTestServer();
+    const res = await server.inject({ url: "/ping" });
+
+    expect(res.headers["x-request-id"]).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  /** Set before rate limiting runs, so a shed request is still traceable. */
+  it("is present on a rate-limited response", async () => {
+    vi.stubEnv("RATE_LIMIT_MAX", "1");
+    const server = await buildTestServer();
+
+    await server.inject({ url: "/ping" });
+    const limited = await server.inject({ url: "/ping" });
+
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers["x-request-id"]).toBeDefined();
+  });
+});
+
+describe("cors", () => {
+  it("stays disabled when no origin is configured", async () => {
     const server = await buildTestServer();
     const res = await server.inject({
       method: "OPTIONS",
@@ -160,7 +148,7 @@ describe("basePlugin", () => {
     expect(res.headers["access-control-allow-origin"]).toBeUndefined();
   });
 
-  it("honours a configured CORS origin", async () => {
+  it("honours a configured origin", async () => {
     vi.stubEnv("CORS_ORIGIN", "https://allowed.dev");
     const server = await buildTestServer();
 
@@ -179,7 +167,7 @@ describe("basePlugin", () => {
     expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
   });
 
-  it("allows a wildcard CORS origin", async () => {
+  it("allows a wildcard origin", async () => {
     vi.stubEnv("CORS_ORIGIN", "*");
     const server = await buildTestServer();
 
@@ -191,8 +179,10 @@ describe("basePlugin", () => {
 
     expect(res.headers["access-control-allow-origin"]).toBe("*");
   });
+});
 
-  it("rate limits ordinary routes", async () => {
+describe("rate limiting", () => {
+  it("limits ordinary routes", async () => {
     vi.stubEnv("RATE_LIMIT_MAX", "2");
     const server = await buildTestServer();
 
@@ -201,7 +191,8 @@ describe("basePlugin", () => {
     expect((await server.inject({ url: "/ping" })).statusCode).toBe(429);
   });
 
-  it("exempts probes and metrics from rate limiting", async () => {
+  /** Probes and scrapes matter most while the service is shedding load. */
+  it("exempts probes and metrics", async () => {
     vi.stubEnv("RATE_LIMIT_MAX", "2");
     const server = await buildTestServer();
 
@@ -212,6 +203,7 @@ describe("basePlugin", () => {
     expect((await server.inject({ url: "/metrics" })).statusCode).toBe(200);
   });
 
+  /** Matching on the route pattern rather than the raw URL is what makes this hold. */
   it("exempts probes carrying a query string", async () => {
     vi.stubEnv("RATE_LIMIT_MAX", "1");
     const server = await buildTestServer();
@@ -219,46 +211,5 @@ describe("basePlugin", () => {
     await server.inject({ url: "/livez" });
 
     expect((await server.inject({ url: "/livez?probe=kubelet" })).statusCode).toBe(200);
-  });
-
-  it("allows a second server in the same process", async () => {
-    await buildTestServer();
-    const second = await buildTestServer();
-
-    expect((await second.inject({ url: "/livez" })).statusCode).toBe(200);
-  });
-});
-
-const UUID = /^[0-9a-f-]{36}$/;
-
-/** `genReqId` is handed the raw Node request, long before Fastify has built anything around it. */
-const reqWith = (header?: string | string[]) =>
-  ({ headers: header === undefined ? {} : { "x-request-id": header } }) as IncomingMessage;
-
-describe("requestId", () => {
-  it("propagates an upstream request id", () => {
-    expect(requestId(reqWith("upstream-123"))).toBe("upstream-123");
-  });
-
-  it("takes the first value when x-request-id is repeated", () => {
-    // Node joins duplicate headers into "first,second" before anything else sees them.
-    expect(requestId(reqWith("first,second"))).toBe("first");
-  });
-
-  it("trims surrounding whitespace", () => {
-    expect(requestId(reqWith("  spaced  "))).toBe("spaced");
-  });
-
-  it("generates an id when the header is absent", () => {
-    expect(requestId(reqWith())).toMatch(UUID);
-  });
-
-  it("generates an id when the header is empty", () => {
-    expect(requestId(reqWith("  "))).toMatch(UUID);
-  });
-
-  /** Node hands over an array for headers it does not collapse, which is not a usable id. */
-  it("generates an id when the header arrives as an array", () => {
-    expect(requestId(reqWith(["first", "second"]))).toMatch(UUID);
   });
 });

@@ -20,7 +20,8 @@
 {{/if}}
     "@repo/fastify-base": "*",
     "fastify": "^5.11.2"{{#if postgres}},
-    "pg": "^8.23.0"{{/if}}
+    "pg": "^8.23.0"{{/if}}{{#if hasDataStore}},
+    "zod": "^4.4.3"{{/if}}
   },
   "devDependencies": {
     "@repo/typescript-config": "*",
