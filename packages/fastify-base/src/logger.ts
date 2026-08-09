@@ -24,5 +24,15 @@ export function loggerOptions(
     level: config.LOG_LEVEL,
     base: { service: name },
     redact: REDACTED,
+    ...(config.NODE_ENV === "development" && {
+      transport: {
+        target: "pino-pretty",
+        options: {
+          colorize: true,
+          translateTime: "HH:MM:ss.l",
+          ignore: "pid,hostname,service",
+        },
+      },
+    }),
   };
 }

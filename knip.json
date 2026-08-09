@@ -5,6 +5,9 @@
     ".": {
       "entry": ["turbo/generators/config.ts", "scripts/commit-assistant.mjs"],
       "ignoreBinaries": ["chcp"]
+    },
+    "packages/fastify-base": {
+      "ignoreDependencies": ["pino-pretty"]
     }
   }
 }

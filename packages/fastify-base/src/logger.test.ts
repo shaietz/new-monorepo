@@ -11,7 +11,12 @@ function optionsFor(name: string) {
   const options = loggerOptions(loadConfig(), name);
 
   expect(options).toBeTypeOf("object");
-  return options as { level: string; base: { service: string }; redact: string[] };
+  return options as {
+    level: string;
+    base: { service: string };
+    redact: string[];
+    transport?: { target: string };
+  };
 }
 
 describe("loggerOptions", () => {
@@ -31,6 +36,19 @@ describe("loggerOptions", () => {
     vi.stubEnv("NODE_ENV", "production");
 
     expect(optionsFor("orders").base).toEqual({ service: "orders" });
+  });
+
+  it("pretty-prints to the console in development", () => {
+    vi.stubEnv("NODE_ENV", "development");
+
+    expect(optionsFor("orders").transport?.target).toBe("pino-pretty");
+  });
+
+  /** pino-pretty is a devDependency, so a production install has nothing to resolve. */
+  it("leaves production on raw JSON, which the aggregator parses", () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    expect(optionsFor("orders").transport).toBeUndefined();
   });
 
   it("redacts credential-bearing headers", () => {
