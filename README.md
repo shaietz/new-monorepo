@@ -80,6 +80,12 @@ Root configs name **zero packages**. `.oxlintrc.json`, `turbo.json` and `knip.js
 and convention, so a new workspace is picked up without editing anything at the root. Keep it that
 way.
 
+`knip.json` keys `apps/*`, declaring `src/routes/` and `src/plugins/` as entry points because
+`@fastify/autoload` imports them dynamically and knip cannot see that. Apps with neither directory —
+any React app — draw a "Refine entry pattern (no matches)" hint. That hint is expected and harmless
+(knip still exits 0); **do not silence it by naming individual apps**, which is what the rule above
+exists to prevent.
+
 Every workspace with tests defines `test`, `test:watch` and `test:coverage`, and gates coverage at
 80%. Every workspace defines `check-types`. Each workspace's Vitest `test.name` must stay unique —
 the [generators](#generators) enforce that by refusing a name that already exists in either
@@ -137,8 +143,8 @@ before the options existed.
 | `redis`    | `@fastify/redis` + `REDIS_URL`, decorating the server with `server.redis`. |
 | `postgres` | `@fastify/postgres` + `pg`, `DATABASE_URL`, `PG_POOL_MAX` → `server.pg`.   |
 
-`buildServer` then takes a `ServerOverrides` argument so tests can inject stand-in clients — which
-is what lets a generated service's suite run with no Redis or Postgres anywhere. Note that
+Both are registered from `app.ts` with ordinary plugin options, so a test passes a stand-in client
+— which is what lets a generated service's suite run with no Redis or Postgres anywhere. Note that
 `@fastify/redis` waits for its connection during registration, so a service with Redis enabled will
 not start at all while Redis is down.
 

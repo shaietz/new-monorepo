@@ -1,0 +1,57 @@
+import { buildWithPlugin, closeHarnesses } from "@repo/fastify-base/testing";
+import { afterEach, describe, expect, it } from "vitest";
+import redis, { redisOptions } from "../../../src/plugins/external/redis.ts";
+import type { RedisClient } from "../../../src/plugins/external/redis.ts";
+
+afterEach(closeHarnesses);
+
+const config = { REDIS_URL: "redis://localhost:6379" };
+
+/**
+ * `@fastify/redis` calls back immediately for a client already reporting "ready", skipping the
+ * connection it would otherwise block registration on. That is what lets this suite run with no
+ * Redis anywhere.
+ */
+function stub(ping: () => Promise<string>): RedisClient {
+  return { status: "ready", ping, quit: async () => "OK" } as unknown as RedisClient;
+}
+
+const build = (ping: () => Promise<string>) =>
+  buildWithPlugin(redis, { config, options: { client: stub(ping) } });
+
+describe("redisOptions", () => {
+  it("dials REDIS_URL when no client is injected", () => {
+    expect(redisOptions(config)).toEqual({
+      url: "redis://localhost:6379",
+      enableOfflineQueue: false,
+    });
+  });
+
+  it("passes an injected client through without taking ownership of it", () => {
+    const client = stub(async () => "PONG");
+
+    expect(redisOptions(config, client)).toEqual({ client, closeClient: false });
+  });
+});
+
+describe("the redis plugin", () => {
+  it("decorates the server with a client", async () => {
+    const server = await build(async () => "PONG");
+
+    await expect(server.redis.ping()).resolves.toBe("PONG");
+  });
+
+  it("registers a readiness probe that passes while Redis answers", async () => {
+    const server = await build(async () => "PONG");
+
+    await expect(server.checkHealth()).resolves.toBe(true);
+  });
+
+  it("registers a readiness probe that fails when the ping rejects", async () => {
+    const server = await build(async () => {
+      throw new Error("connection refused");
+    });
+
+    await expect(server.checkHealth()).resolves.toBe(false);
+  });
+});

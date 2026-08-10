@@ -70,12 +70,12 @@ const ENVIRONMENTS: Record<PackageEnvironment, EnvironmentProfile> = {
  */
 const STORE_FILES = {
   redis: [
-    "templates/fastify-service/src/redis.ts.hbs",
-    "templates/fastify-service/src/redis.test.ts.hbs",
+    "templates/fastify-service/src/plugins/external/redis.ts.hbs",
+    "templates/fastify-service/test/plugins/external/redis.test.ts.hbs",
   ],
   postgres: [
-    "templates/fastify-service/src/postgres.ts.hbs",
-    "templates/fastify-service/src/postgres.test.ts.hbs",
+    "templates/fastify-service/src/plugins/external/postgres.ts.hbs",
+    "templates/fastify-service/test/plugins/external/postgres.test.ts.hbs",
   ],
 } as const;
 

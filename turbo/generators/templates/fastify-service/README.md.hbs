@@ -19,6 +19,38 @@ Run them from the repo root with `npm run <script> -w {{ name }}`, or through tu
 There is no `build`. Node 24 strips TypeScript types at load, so `src/index.ts` runs directly —
 including from a container.
 
+## Structure
+
+`src/app.ts` is a plugin holding the entire stack; `src/index.ts` constructs the instance and owns
+the lifecycle. Reading those two files tells you everything this service does at boot.
+
+```
+src/
+  index.ts               entry point — Fastify(options), closeWithGrace, listen
+  app.ts                 config + basePlugin + this service's own plugins
+  plugins/               your own plugins, registered explicitly from app.ts
+  routes/                the API surface; autoloaded, directory names are URL prefixes
+  schemas/               Zod schemas shared between routes
+test/                    mirrors src/; never inside it
+```
+
+Tests live in `test/`, not beside the code they cover. Autoload matches `foo.test.ts` as readily as
+`foo.ts`, so a colocated test beside a route would be registered as a route.
+
+**Only routes are autoloaded.** Plugins are registered by hand in `app.ts`, which is what lets them
+take ordinary options — how a test substitutes a stand-in client.
+
+`basePlugin` is the shared stack from `@repo/fastify-base`: config, Zod, security middleware, health
+probes, metrics, OpenAPI, the error handler. To change one of those defaults, replace that single
+line with the individual plugins it registers — that list is in the package's README, and
+`expectBaseContract` in `test/app.test.ts` fails if the order comes out wrong.
+
+Adding your own plugin means writing it in `src/plugins/` and registering it in `app.ts` too.
+
+Plugins are wrapped in [`fastify-plugin`](https://github.com/fastify/fastify-plugin) when they need
+to decorate the server for everyone else. Route plugins never are — encapsulation is what keeps one
+route's hooks out of every other route.
+
 ## Environment
 
 `loadConfig()` validates `process.env` at boot and throws on anything invalid, so a misconfigured
@@ -32,14 +64,22 @@ To add a service-specific variable, pass it to `loadConfig`:
 import { loadConfig } from "@repo/fastify-base";
 import { z } from "zod";
 
-export const config = loadConfig({
+const extraEnv = {
   DATABASE_URL: z.url(),
   MAX_RETRIES: z.coerce.number().default(3),
-});
+};
+
+const config = loadConfig(extraEnv);
+
+// Makes the same variables reachable as `fastify.config` from every plugin and route.
+declare module "fastify" {
+  interface FastifyConfig extends z.infer<z.ZodObject<typeof extraEnv>> {}
+}
 ```
 
-`config` is fully typed from that call. **Coercion is explicit** — `process.env` values are always
-strings, so a plain `z.number()` always fails; use `z.coerce.number()` or `z.stringbool()`.
+`config` is fully typed from that call, and so is `fastify.config` — both derive from `extraEnv`, so
+the runtime schema and the type cannot drift. **Coercion is explicit** — `process.env` values are
+always strings, so a plain `z.number()` always fails; use `z.coerce.number()` or `z.stringbool()`.
 
 Give a variable a default only when the fallback is genuinely safe everywhere. A connection string
 is not: defaulting it to localhost turns "deployed without configuration" from a crash at boot into
@@ -64,23 +104,31 @@ until the connection returns — without that, a `/readyz` request would hang ra
 `connectionTimeoutMillis` is set because pg otherwise waits forever for one.
 
 {{/if}}
-The data-store clients register **before** `basePlugin`, whose `healthCheck` probes them from
-`/readyz`: readiness reports 503 while a store is unreachable and recovers on its own once it is
-back. Ordinary traffic is untouched — `/ping` and `/livez` keep answering 200.
+Each client lives in its own file under `src/plugins/external/`, autoloaded after everything
+`@repo/fastify-base` registers. Both register a readiness probe on the way in:
 
-`buildServer` takes a `ServerOverrides` argument so tests can inject stand-in clients; that is why
-`src/app.test.ts` runs with nothing installed. Both arguments default, so production calls
-`buildServer()`.
+```ts
+fastify.addHealthCheck("postgres", () => fastify.pg.query("SELECT 1"));
+```
+
+`/readyz` runs every registered probe under `HEALTH_TIMEOUT_MS` and reports 503 while any of them
+rejects or hangs, recovering on its own once the store is back. Ordinary traffic is untouched —
+`/ping` and `/livez` keep answering 200.
+
+Both clients are registered from `app.ts` with ordinary plugin options, so a test substitutes a
+stand-in by passing one: `register(app, { pg: stub })`. That is why `test/app.test.ts` runs with
+nothing installed.
 
 {{/if}}
 ## Endpoints
 
-`GET /ping` is this service's own. The rest come from `basePlugin`:
+`GET /ping` is this service's own, from `src/routes/root.ts`. The rest come from
+`@repo/fastify-base`:
 
 | Route      | Purpose                                                                              |
 | ---------- | ------------------------------------------------------------------------------------ |
 | `/livez`   | Liveness. Checks no dependencies, and keeps answering 200 even while shutting down.  |
-| `/readyz`  | Readiness. 503 when the health check fails, times out, or the service is draining.   |
+| `/readyz`  | Readiness. 503 when a registered health check fails or times out.   |
 | `/metrics` | Prometheus exposition, including per-route request durations.                        |
 | `/docs`    | OpenAPI UI, only when `ENABLE_DOCS=true`.                                            |
 
@@ -88,18 +136,39 @@ Point the load balancer at `/readyz`, not `/livez`.
 
 ## Routes
 
-Route schemas are Zod, with request and reply types inferred from them:
+A route file default-exports a plugin, and its path under `src/routes` is its URL prefix —
+`routes/api/tasks/index.ts` serves `/api/tasks`. Schemas are Zod, with request and reply types
+inferred from them:
 
 ```ts
-import type { ZodTypeProvider } from "@repo/fastify-base";
+// src/routes/api/things/index.ts  →  /api/things
+import type { FastifyPluginAsyncZod } from "@repo/fastify-base";
+import { ThingSchema } from "../../../schemas/things.ts";
 
-server
-  .withTypeProvider<ZodTypeProvider>()
-  .post(
-    "/things",
-    { schema: { body: ThingSchema, response: { 201: ThingSchema } } },
+const things: FastifyPluginAsyncZod = async (fastify) => {
+  fastify.post(
+    "/",
+    { schema: { body: ThingSchema, response: { 201: ThingSchema }, tags: ["things"] } },
     async (req, reply) => reply.code(201).send(await create(req.body)),
   );
+};
+
+export default things;
+```
+
+Do not give a route a response schema for an error status. The Zod serializer throws on a shape it
+rejects instead of falling back, and the shared error handler already sends one consistent body.
+
+To apply a hook to a whole subtree, add `autohooks.ts` beside the routes — it covers that directory
+and everything nested under it:
+
+```ts
+// src/routes/api/autohooks.ts — guards every route under /api
+export default async function (fastify: FastifyInstance) {
+  fastify.addHook("onRequest", async (request, reply) => {
+    if (!request.headers.authorization) reply.unauthorized();
+  });
+}
 ```
 
 A schema a client also needs belongs in a shared workspace package tagged `isomorphic`, so both

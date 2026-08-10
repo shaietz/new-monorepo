@@ -9,11 +9,22 @@
   "rules": {
     "eqeqeq": ["error", "always"],
     "no-console": "error",
-    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ],
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
     "import/no-cycle": "error",
-    "import/no-unassigned-import": ["error", { "allow": ["**/*.css", "@testing-library/**"] }],
+    "import/no-unassigned-import": [
+      "error",
+      {
+        "allow": ["**/*.css", "@testing-library/**"]
+      }
+    ],
     "unicorn/prefer-node-protocol": "error",
     "node/no-sync": "warn",
     "oxc/no-async-endpoint-handlers": "off"
@@ -26,7 +37,12 @@
         "react/react-in-jsx-scope": "off",
         "react/rules-of-hooks": "error",
         "react/exhaustive-deps": "error",
-        "react/only-export-components": ["warn", { "allowConstantExport": true }]
+        "react/only-export-components": [
+          "warn",
+          {
+            "allowConstantExport": true
+          }
+        ]
       }
     },
     {
@@ -37,21 +53,34 @@
         "no-console": "off",
         "vitest/no-focused-tests": "error",
         "vitest/no-identical-title": "error",
-        "vitest/expect-expect": "error",
+        "vitest/expect-expect": [
+          "error",
+          {
+            "assertFunctionNames": ["expect", "expectBaseContract"]
+          }
+        ],
         "vitest/no-disabled-tests": "warn"
       }
     },
     {
       "files": ["**/*.config.{ts,js,mts,mjs}"],
-      "rules": { "no-console": "off" }
+      "rules": {
+        "no-console": "off"
+      }
     },
     {
       "files": ["scripts/**"],
-      "rules": { "no-console": "off", "node/no-sync": "off" }
+      "rules": {
+        "no-console": "off",
+        "node/no-sync": "off"
+      }
     },
     {
       "files": ["turbo/generators/**"],
-      "rules": { "no-console": "off", "node/no-sync": "off" }
+      "rules": {
+        "no-console": "off",
+        "node/no-sync": "off"
+      }
     }
   ]
 }

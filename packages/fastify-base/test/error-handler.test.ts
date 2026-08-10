@@ -1,16 +1,12 @@
-import fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
-import { loadConfig } from "./env.ts";
-import { basePlugin } from "./plugin.ts";
-import { serverOptions } from "./server-options.ts";
 
-const started: FastifyInstance[] = [];
+import { buildTestServer, closeTestServers } from "./fixtures/service.ts";
 
 afterEach(async () => {
-  await Promise.all(started.splice(0).map((server) => server.close()));
+  await closeTestServers();
   vi.unstubAllEnvs();
 });
 
@@ -18,14 +14,11 @@ afterEach(async () => {
 const LEAKY = "connect ECONNREFUSED postgres://app:hunter2@db.internal:5432";
 
 /**
- * `logger: false` regardless of NODE_ENV: these tests run under `production` to exercise masking,
- * and pino would otherwise write every expected error to the suite's output.
+ * `silent` rather than `NODE_ENV=test`: these suites run under `production` to exercise masking,
+ * and pino would otherwise write every deliberately provoked error to the suite's output.
  */
-async function buildTestServer() {
-  const config = loadConfig();
-  const server = fastify({ ...serverOptions(config, "test"), logger: false });
-
-  await server.register(basePlugin, { config, name: "test" });
+async function buildWithFailingRoutes(): Promise<FastifyInstance> {
+  const server = await buildTestServer({ silent: true });
 
   server.get("/boom", async () => {
     throw new Error(LEAKY);
@@ -34,14 +27,13 @@ async function buildTestServer() {
     throw server.httpErrors.gone("finished");
   });
 
-  started.push(server);
   return server;
 }
 
 describe("error handler", () => {
   it("masks internal error messages in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    const server = await buildTestServer();
+    const server = await buildWithFailingRoutes();
 
     const res = await server.inject({ url: "/boom" });
 
@@ -54,13 +46,13 @@ describe("error handler", () => {
   /** Masking in production only — hiding the cause while debugging locally helps nobody. */
   it("keeps the real message outside production", async () => {
     vi.stubEnv("NODE_ENV", "development");
-    const server = await buildTestServer();
+    const server = await buildWithFailingRoutes();
 
     expect((await server.inject({ url: "/boom" })).json().message).toBe(LEAKY);
   });
 
   it("returns one shape for every failure", async () => {
-    const server = await buildTestServer();
+    const server = await buildWithFailingRoutes();
     const res = await server.inject({ url: "/boom" });
 
     expect(res.json()).toMatchObject({
@@ -73,7 +65,7 @@ describe("error handler", () => {
 
   /** Without this, a user reporting "I got a 500" cannot be joined to any log line. */
   it("echoes the request id that identifies the failure in the logs", async () => {
-    const server = await buildTestServer();
+    const server = await buildWithFailingRoutes();
     const res = await server.inject({ url: "/boom", headers: { "x-request-id": "trace-me" } });
 
     expect(res.json().requestId).toBe("trace-me");
@@ -84,7 +76,7 @@ describe("error handler", () => {
    * accidentally acquired one would surface as this instead of the error it was describing.
    */
   it("serialises errors without a schema conflict", async () => {
-    const server = await buildTestServer();
+    const server = await buildWithFailingRoutes();
 
     expect((await server.inject({ url: "/boom" })).body).not.toContain(
       "FST_ERR_FAILED_ERROR_SERIALIZATION",
@@ -93,7 +85,7 @@ describe("error handler", () => {
 
   it("passes deliberate 4xx messages through", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    const server = await buildTestServer();
+    const server = await buildWithFailingRoutes();
     const res = await server.inject({ url: "/gone" });
 
     expect(res.statusCode).toBe(410);
@@ -101,7 +93,7 @@ describe("error handler", () => {
   });
 
   it("reports schema validation failures as 400 with detail", async () => {
-    const server = await buildTestServer();
+    const server = await buildTestServer({ silent: true });
     server
       .withTypeProvider<ZodTypeProvider>()
       .post("/echo", { schema: { body: z.object({ email: z.email() }) } }, async () => "ok");
@@ -116,7 +108,7 @@ describe("error handler", () => {
   /** A reply that violates its own schema is a bug here, and its shape is not the client's business. */
   it("masks a response that does not match its schema", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    const server = await buildTestServer();
+    const server = await buildTestServer({ silent: true });
     server.withTypeProvider<ZodTypeProvider>().get(
       "/wrong",
       { schema: { response: { 200: z.object({ required: z.string() }) } } },
@@ -133,7 +125,7 @@ describe("error handler", () => {
 
 describe("not found handler", () => {
   it("returns the same shape as any other error", async () => {
-    const server = await buildTestServer();
+    const server = await buildTestServer({ silent: true });
     const res = await server.inject({ url: "/nope" });
 
     expect(res.statusCode).toBe(404);
@@ -143,5 +135,23 @@ describe("not found handler", () => {
       requestId: expect.any(String),
     });
     expect(res.json().message).toContain("/nope");
+  });
+
+  /**
+   * An unlimited 404 lets an attacker enumerate valid URLs. This limiter is separate from, and much
+   * tighter than, the one guarding real routes.
+   */
+  it("rate limits repeated misses", async () => {
+    const server = await buildTestServer({ silent: true });
+
+    // Sequential on purpose: the limiter counts in arrival order, so a parallel burst would make
+    // which request is the fourth — and therefore which one is shed — nondeterministic.
+    const first = await server.inject({ url: "/nope-1" });
+    const second = await server.inject({ url: "/nope-2" });
+    const third = await server.inject({ url: "/nope-3" });
+    const fourth = await server.inject({ url: "/nope-4" });
+
+    expect([first, second, third].map((res) => res.statusCode)).toEqual([404, 404, 404]);
+    expect(fourth.statusCode).toBe(429);
   });
 });

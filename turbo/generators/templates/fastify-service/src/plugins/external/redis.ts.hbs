@@ -1,11 +1,17 @@
+import fastifyRedis from "@fastify/redis";
+import fp from "fastify-plugin";
 import type { FastifyRedisPluginOptions } from "@fastify/redis";
-import type { FastifyInstance } from "fastify";
 
 /**
  * The pre-built-client half of `@fastify/redis`'s options union. `Extract` rather than an index
  * access because the other half has no `client` property at all.
  */
 export type RedisClient = Extract<FastifyRedisPluginOptions, { client: unknown }>["client"];
+
+export interface RedisPluginOptions {
+  /** A stand-in client, so a test suite needs no Redis. */
+  readonly client?: RedisClient | undefined;
+}
 
 export function redisOptions(
   config: { REDIS_URL: string },
@@ -19,7 +25,13 @@ export function redisOptions(
   return { url: config.REDIS_URL, enableOfflineQueue: false };
 }
 
-/** Throws when Redis is unreachable, which is how `basePlugin` learns the service is not ready. */
-export async function checkRedis(server: FastifyInstance): Promise<void> {
-  await server.redis.ping();
-}
+/** @see {@link https://github.com/fastify/fastify-redis} */
+export default fp<RedisPluginOptions>(
+  async (fastify, { client }) => {
+    await fastify.register(fastifyRedis, redisOptions(fastify.config, client));
+
+    // Rejecting is how `/readyz` learns Redis is unreachable. Nothing else is gated on it.
+    fastify.addHealthCheck("redis", () => fastify.redis.ping());
+  },
+  { name: "redis" },
+);

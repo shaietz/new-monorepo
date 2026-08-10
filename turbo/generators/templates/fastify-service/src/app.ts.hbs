@@ -1,32 +1,24 @@
-{{#if postgres}}
-import fastifyPostgres from "@fastify/postgres";
-{{/if}}
-{{#if redis}}
-import fastifyRedis from "@fastify/redis";
-{{/if}}
-import fastify from "fastify";
-import { basePlugin, loadConfig, serverOptions } from "@repo/fastify-base";
+import { join } from "node:path";
+import autoload from "@fastify/autoload";
+import fp from "fastify-plugin";
 {{#if hasDataStore}}
 import { z } from "zod";
 {{/if}}
+import { basePlugin, loadConfig, serverOptions } from "@repo/fastify-base";
 {{#if postgres}}
-import { checkPostgres, postgresOptions } from "./postgres.ts";
+import postgresPlugin from "./plugins/external/postgres.ts";
+import type { PgModule } from "./plugins/external/postgres.ts";
 {{/if}}
 {{#if redis}}
-import { checkRedis, redisOptions } from "./redis.ts";
-{{/if}}
-{{#if postgres}}
-import type { PgModule } from "./postgres.ts";
-{{/if}}
-{{#if redis}}
-import type { RedisClient } from "./redis.ts";
+import redisPlugin from "./plugins/external/redis.ts";
+import type { RedisClient } from "./plugins/external/redis.ts";
 {{/if}}
 
-const SERVICE_NAME = "{{ dashCase name }}";
+const NAME = "{{ dashCase name }}";
 
 {{#if hasDataStore}}
 // No defaults: a service deployed without these should fail at boot, not quietly dial localhost.
-export const config = loadConfig({
+const extraEnv = {
 {{#if postgres}}
   DATABASE_URL: z.url(),
   PG_POOL_MAX: z.coerce.number().min(1).default(10),
@@ -34,61 +26,57 @@ export const config = loadConfig({
 {{#if redis}}
   REDIS_URL: z.url(),
 {{/if}}
-});
+};
 
-/** Clients standing in for the ones `config` would otherwise dial. Tests inject through here. */
-export interface ServerOverrides {
-{{#if postgres}}
-  postgres?: PgModule;
-{{/if}}
-{{#if redis}}
-  redis?: RedisClient;
-{{/if}}
+export const config = loadConfig(extraEnv);
+
+// Merges this service's variables into `fastify.config`, derived from the schema above so the
+// runtime shape and the type cannot drift.
+declare module "fastify" {
+  interface FastifyConfig extends z.infer<z.ZodObject<typeof extraEnv>> {}
 }
 
-/** Both arguments exist for tests; production takes the defaults. */
-export async function buildServer(overrides: ServerOverrides = {}, cfg: typeof config = config) {
+/** Stand-in clients a test can substitute; production registers the real ones. */
+export interface AppOptions {
+{{#if postgres}}
+  readonly pg?: PgModule | undefined;
+{{/if}}
+{{#if redis}}
+  readonly redisClient?: RedisClient | undefined;
+{{/if}}
+}
 {{else}}
 export const config = loadConfig();
-
-/** `cfg` is a parameter so tests can build a server without stubbing the environment first. */
-export async function buildServer(cfg: typeof config = config) {
 {{/if}}
-  const server = fastify(serverOptions(cfg, SERVICE_NAME));
 
-{{#if hasDataStore}}
-  // Before basePlugin, so the clients are decorated on `server` by the time /readyz probes them.
+export const options = serverOptions(config, NAME);
+
+/**
+ * `fp` so the error handler, schema compilers and decorators inside `basePlugin` apply to the root
+ * instance rather than a throwaway child scope.
+ *
+ * `basePlugin` is the shared stack — config, Zod, security middleware, health probes, metrics,
+ * OpenAPI, the error handler. To change one of those, replace this line with the individual plugins
+ * it registers; see `@repo/fastify-base`'s README.
+ */
+export default fp{{#if hasDataStore}}<AppOptions>{{/if}}(
+  async function app(fastify{{#if hasDataStore}}, opts{{/if}}) {
+    await fastify.register(basePlugin, { config, name: NAME });
+
+{{#if postgres}}
+    await fastify.register(postgresPlugin, { pg: opts.pg });
 {{/if}}
 {{#if redis}}
-  await server.register(fastifyRedis, redisOptions(cfg, overrides.redis));
+    await fastify.register(redisPlugin, { client: opts.redisClient });
 {{/if}}
-{{#if postgres}}
-  await server.register(fastifyPostgres, postgresOptions(cfg, overrides.postgres));
-{{/if}}
-{{#if hasDataStore}}
-
-  await server.register(basePlugin, {
-    config: cfg,
-    name: SERVICE_NAME,
-{{#if redis}}
-{{#if postgres}}
-    healthCheck: async () => {
-      await Promise.all([checkRedis(server), checkPostgres(server)]);
-    },
-{{else}}
-    healthCheck: () => checkRedis(server),
-{{/if}}
-{{else}}
-    healthCheck: () => checkPostgres(server),
-{{/if}}
-  });
-{{else}}
-  await server.register(basePlugin, { config: cfg, name: SERVICE_NAME });
-{{/if}}
-
-  server.get("/ping", async () => {
-    return "pong\n";
-  });
-
-  return server;
-}
+    await fastify.register(autoload, {
+      dir: join(import.meta.dirname, "routes"),
+      // Required: autoload reads `options.prefix` unguarded when a plugin exports `autoConfig` as a
+      // function, and throws on `undefined`.
+      options: {},
+      autoHooks: true,
+      cascadeHooks: true,
+    });
+  },
+  { name: `${NAME}-app` },
+);

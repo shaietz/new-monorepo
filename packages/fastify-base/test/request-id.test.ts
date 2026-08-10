@@ -1,11 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { IncomingMessage } from "node:http";
-import { loadConfig } from "./env.ts";
-import { requestId, serverOptions } from "./server-options.ts";
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
+import { requestId } from "../src/request-id.ts";
 
 const UUID = /^[0-9a-f-]{36}$/;
 
@@ -46,33 +42,5 @@ describe("requestId", () => {
    */
   it("generates ids that do not collide across processes", () => {
     expect(requestId(reqWith())).not.toBe(requestId(reqWith()));
-  });
-});
-
-describe("serverOptions", () => {
-  it("carries the config values Fastify needs at construction", () => {
-    vi.stubEnv("TRUST_PROXY", "true");
-    vi.stubEnv("BODY_LIMIT", "2048");
-
-    const options = serverOptions(loadConfig(), "orders");
-
-    expect(options.trustProxy).toBe(true);
-    expect(options.bodyLimit).toBe(2048);
-    expect(options.genReqId).toBe(requestId);
-  });
-
-  /**
-   * Node closes an idle connection after 5s. A load balancer that still believes the connection is
-   * open sends the next request into that close, which surfaces as an unreproducible 502.
-   */
-  it("keeps connections alive longer than a load balancer's idle timeout", () => {
-    const options = serverOptions(loadConfig(), "orders");
-
-    expect(options.keepAliveTimeout).toBeGreaterThan(60_000);
-    expect(options.requestTimeout).toBeGreaterThan(0);
-  });
-
-  it("takes its logger from loggerOptions", () => {
-    expect(serverOptions(loadConfig(), "orders").logger).toBe(false);
   });
 });

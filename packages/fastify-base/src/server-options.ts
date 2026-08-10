@@ -1,43 +1,57 @@
-import { randomUUID } from "node:crypto";
-import type { FastifyServerOptions } from "fastify";
-import type { IncomingMessage } from "node:http";
+import type { FastifyHttpOptions, FastifyServerOptions } from "fastify";
+import type { Server } from "node:http";
 
-import type { BaseConfig } from "./env.ts";
-import { loggerOptions } from "./logger.ts";
+import type { BaseConfig } from "./config.ts";
+import { requestId } from "./request-id.ts";
 
-/**
- * Must exceed the load balancer's idle timeout (60s on an AWS ALB by default). Node closes an idle
- * connection after 5s, and a request arriving on a connection the balancer still believes is open
- * races that close — which surfaces as sporadic, unreproducible 502s.
- */
-const KEEP_ALIVE_TIMEOUT_MS = 72_000;
+/** `FastifyServerOptions` alone omits `http`, which is where Node's own socket timeouts live. */
+export type ServerOptions = FastifyServerOptions & Pick<FastifyHttpOptions<Server>, "http">;
 
-/** A request still on the wire after this is not going to finish usefully. */
-const REQUEST_TIMEOUT_MS = 30_000;
+/** Anything logging `{ req }`, `{ res }` or an error carrying one would otherwise leak these. */
+const REDACTED = ["req.headers.authorization", "req.headers.cookie", 'res.headers["set-cookie"]'];
 
-/**
- * Propagates an upstream `x-request-id`, or mints one.
- *
- * Fastify's built-in `requestIdHeader` does most of this, but falls back to a per-process counter
- * (`req-1`, `req-2`) that collides across replicas, and passes comma-joined duplicate headers
- * through unchanged. Do not set `requestIdHeader` alongside this — it would handle the header twice.
- */
-export function requestId(req: IncomingMessage): string {
-  const header = req.headers["x-request-id"];
+export function loggerOptions(
+  config: BaseConfig,
+  name: string,
+): NonNullable<FastifyServerOptions["logger"]> {
+  // Silent under test, so a failing assertion is not buried in request logs.
+  if (config.NODE_ENV === "test") return false;
 
-  // Node hands over an array for headers it does not collapse, which is not a usable id.
-  if (typeof header !== "string") {
-    return randomUUID();
-  }
-
-  return header.split(",", 1)[0]?.trim() || randomUUID();
+  return {
+    level: config.LOG_LEVEL,
+    // Labels every line, so one aggregator can hold the fleet and stay filterable.
+    base: { service: name },
+    redact: REDACTED,
+    // Keyed on the terminal, not NODE_ENV: a container running without NODE_ENV set should still
+    // emit JSON, and so should a dev server piped to a file.
+    ...(process.stdout.isTTY && {
+      transport: {
+        target: "pino-pretty",
+        options: {
+          colorize: true,
+          translateTime: "HH:MM:ss.l",
+          ignore: "pid,hostname,service",
+        },
+      },
+    }),
+  };
 }
 
 /**
- * Every constructor-level default a service needs. Keeping these here rather than in each service's
- * `fastify()` call is what stops the fleet from drifting apart one copy-paste at a time.
+ * Must exceed the load balancer's idle timeout (60s on an AWS ALB). Node closes an idle connection
+ * after 5s, and a request arriving on one the balancer still believes is open races that close —
+ * which surfaces as sporadic, unreproducible 502s.
  */
-export function serverOptions(config: BaseConfig, name: string): FastifyServerOptions {
+const KEEP_ALIVE_TIMEOUT_MS = 72_000;
+
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Bounds how long a client can hold a socket without committing to a request — slowloris. */
+const CONNECTION_TIMEOUT_MS = 120_000;
+const HEADERS_TIMEOUT_MS = 15_000;
+
+/** Constructor-level defaults, shared so the fleet cannot drift one copy-paste at a time. */
+export function serverOptions(config: BaseConfig, name: string): ServerOptions {
   return {
     logger: loggerOptions(config, name),
     trustProxy: config.TRUST_PROXY,
@@ -45,5 +59,7 @@ export function serverOptions(config: BaseConfig, name: string): FastifyServerOp
     genReqId: requestId,
     keepAliveTimeout: KEEP_ALIVE_TIMEOUT_MS,
     requestTimeout: REQUEST_TIMEOUT_MS,
+    connectionTimeout: CONNECTION_TIMEOUT_MS,
+    http: { headersTimeout: HEADERS_TIMEOUT_MS },
   };
 }

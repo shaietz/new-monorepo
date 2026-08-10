@@ -1,12 +1,18 @@
+import fastifyPostgres from "@fastify/postgres";
+import fp from "fastify-plugin";
 import type * as Pg from "pg";
 import type { PostgresPluginOptions } from "@fastify/postgres";
-import type { FastifyInstance } from "fastify";
 
 /**
  * The `pg` module itself. Imported by name rather than pulled off the plugin's options so `pg`
  * stays a visible dependency — nothing else here references it, and knip would call it unused.
  */
 export type PgModule = typeof Pg;
+
+export interface PostgresPluginParams {
+  /** A stand-in `pg` module, so a test suite needs no database. */
+  readonly pg?: PgModule | undefined;
+}
 
 export function postgresOptions(
   config: { DATABASE_URL: string; PG_POOL_MAX: number },
@@ -25,7 +31,13 @@ export function postgresOptions(
   return options;
 }
 
-/** Throws when Postgres is unreachable, which is how `basePlugin` learns the service is not ready. */
-export async function checkPostgres(server: FastifyInstance): Promise<void> {
-  await server.pg.query("SELECT 1");
-}
+/** @see {@link https://github.com/fastify/fastify-postgres} */
+export default fp<PostgresPluginParams>(
+  async (fastify, { pg }) => {
+    await fastify.register(fastifyPostgres, postgresOptions(fastify.config, pg));
+
+    // Rejecting is how `/readyz` learns Postgres is unreachable. Nothing else is gated on it.
+    fastify.addHealthCheck("postgres", () => fastify.pg.query("SELECT 1"));
+  },
+  { name: "postgres" },
+);
