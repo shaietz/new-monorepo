@@ -9,18 +9,21 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "check-types": "tsc"
+    "check-types": "tsc"{{#if postgres}},
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"{{/if}}
   },
   "dependencies": {
-{{#if postgres}}
-    "@fastify/postgres": "^6.1.0",
-{{/if}}
+    "@fastify/autoload": "^6.5.0",
 {{#if redis}}
     "@fastify/redis": "^8.0.0",
 {{/if}}
-    "@fastify/autoload": "^6.5.0",
     "@repo/fastify-base": "*",
     "close-with-grace": "^2.5.0",
+{{#if postgres}}
+    "drizzle-orm": "^0.45.2",
+{{/if}}
     "fastify": "^5.11.2",
     "fastify-plugin": "^6.0.0"{{#if postgres}},
     "pg": "^8.23.0"{{/if}}{{#if hasDataStore}},
@@ -33,6 +36,9 @@
     "@types/pg": "^8.21.0",
 {{/if}}
     "@vitest/coverage-v8": "^4.1.10",
+{{#if postgres}}
+    "drizzle-kit": "^0.31.10",
+{{/if}}
     "typescript": "~6.0.2",
     "vitest": "^4.1.10"
   }

@@ -1,43 +1,41 @@
-import fastifyPostgres from "@fastify/postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
 import fp from "fastify-plugin";
-import type * as Pg from "pg";
-import type { PostgresPluginOptions } from "@fastify/postgres";
+import { Pool } from "pg";
+import * as schema from "../../db/schemas/index.ts";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { PoolConfig } from "pg";
 
-/**
- * The `pg` module itself. Imported by name rather than pulled off the plugin's options so `pg`
- * stays a visible dependency — nothing else here references it, and knip would call it unused.
- */
-export type PgModule = typeof Pg;
+export type { Pool } from "pg";
 
-export interface PostgresPluginParams {
-  /** A stand-in `pg` module, so a test suite needs no database. */
-  readonly pg?: PgModule | undefined;
+export type Database = NodePgDatabase<typeof schema> & { $client: Pool };
+
+declare module "fastify" {
+  interface FastifyInstance {
+    readonly db: Database;
+  }
 }
 
-export function postgresOptions(
-  config: { DATABASE_URL: string; PG_POOL_MAX: number },
-  pgModule?: PgModule,
-): PostgresPluginOptions {
-  const options: PostgresPluginOptions = {
+export interface PostgresPluginParams {
+  /** A stand-in pool, so a test suite needs no database. */
+  readonly pool?: Pool | undefined;
+}
+
+export function poolOptions(config: { DATABASE_URL: string; PG_POOL_MAX: number }): PoolConfig {
+  return {
     connectionString: config.DATABASE_URL,
     max: config.PG_POOL_MAX,
     // pg waits forever by default, and a probe that never settles reads as healthy.
     connectionTimeoutMillis: 2000,
   };
-
-  // Injected in tests so the suite needs no database; production takes the pool pg builds itself.
-  if (pgModule) return { ...options, pg: pgModule };
-
-  return options;
 }
 
-/** @see {@link https://github.com/fastify/fastify-postgres} */
 export default fp<PostgresPluginParams>(
-  async (fastify, { pg }) => {
-    await fastify.register(fastifyPostgres, postgresOptions(fastify.config, pg));
+  async (fastify, { pool }) => {
+    const client = pool ?? new Pool(poolOptions(fastify.config));
 
-    // Rejecting is how `/readyz` learns Postgres is unreachable. Nothing else is gated on it.
-    fastify.addHealthCheck("postgres", () => fastify.pg.query("SELECT 1"));
+    fastify.decorate("db", drizzle(client, { schema, casing: "snake_case" }));
+    fastify.addHook("onClose", () => client.end());
+    fastify.addHealthCheck("postgres", () => client.query("SELECT 1"));
   },
   { name: "postgres" },
 );

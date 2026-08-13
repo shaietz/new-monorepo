@@ -74,6 +74,10 @@ const STORE_FILES = {
     "templates/fastify-service/test/plugins/external/redis.test.ts.hbs",
   ],
   postgres: [
+    "templates/fastify-service/src/db/schemas/index.ts.hbs",
+    "templates/fastify-service/src/db/schemas/example.ts.hbs",
+    "templates/fastify-service/src/db/migrations/.gitkeep",
+    "templates/fastify-service/drizzle.config.ts.hbs",
     "templates/fastify-service/src/plugins/external/postgres.ts.hbs",
     "templates/fastify-service/test/plugins/external/postgres.test.ts.hbs",
   ],
@@ -218,7 +222,7 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
       {
         type: "confirm",
         name: "postgres",
-        message: "Add a Postgres client (@fastify/postgres)?",
+        message: "Add Postgres with Drizzle (@fastify/postgres + drizzle-orm)?",
         default: false,
       },
     ],
