@@ -1,6 +1,8 @@
 # `@repo/schemas`
 
-TODO: say what this package is for.
+```
+this package will contain all the B2B & C2B schemas.  
+```
 
 ## Usage
 
