@@ -13,6 +13,11 @@ import type { PgModule } from "./plugins/external/postgres.ts";
 import redisPlugin from "./plugins/external/redis.ts";
 import type { RedisClient } from "./plugins/external/redis.ts";
 {{/if}}
+{{#if trpc}}
+import trpcPlugin from "./plugins/external/trpc.ts";
+import type { AppRouter } from "./plugins/external/trpc.ts";
+import { appRouter } from "./trpc/router.ts";
+{{/if}}
 
 const NAME = "{{ dashCase name }}";
 
@@ -44,6 +49,9 @@ export interface AppOptions {
 {{#if redis}}
   readonly redisClient?: RedisClient | undefined;
 {{/if}}
+{{#if trpc}}
+  readonly trpcRouter?: AppRouter | undefined;
+{{/if}}
 }
 {{else}}
 export const config = loadConfig();
@@ -68,6 +76,11 @@ export default fp{{#if hasDataStore}}<AppOptions>{{/if}}(
 {{/if}}
 {{#if redis}}
     await fastify.register(redisPlugin, { client: opts.redisClient });
+{{/if}}
+{{#if trpc}}
+    // Prefer an injected router for tests; fall back to the generated `appRouter` for the
+    // real service.
+    await fastify.register(trpcPlugin, { router: opts?.trpcRouter ?? appRouter });
 {{/if}}
     await fastify.register(autoload, {
       dir: join(import.meta.dirname, "routes"),
