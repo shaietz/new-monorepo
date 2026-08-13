@@ -5,6 +5,15 @@
     ".": {
       "entry": ["turbo/generators/config.ts", "scripts/commit-assistant.mjs"],
       "ignoreBinaries": ["chcp"]
+    },
+    "packages/fastify-base": {
+      "entry": ["test/fixtures/**/*.ts"],
+      "includeEntryExports": false,
+      "ignoreDependencies": ["pino-pretty"]
+    },
+    "apps/*": {
+      "entry": ["src/{routes,plugins}/**/*.ts"],
+      "includeEntryExports": false
     }
   }
 }

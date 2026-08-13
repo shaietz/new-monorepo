@@ -1,4 +1,6 @@
+import fp from "fastify-plugin";
 import { z } from "zod";
+import type { FastifyConfig } from "fastify";
 
 const baseEnvShape = {
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -6,7 +8,6 @@ const baseEnvShape = {
   PORT: z.coerce.number().min(0).max(65535).default(8080),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   SHUTDOWN_GRACE_MS: z.coerce.number().min(0).default(10_000),
-  SHUTDOWN_DELAY_MS: z.coerce.number().min(0).default(5_000),
   HEALTH_TIMEOUT_MS: z.coerce.number().min(1).default(2_000),
   TRUST_PROXY: z.stringbool().default(false),
   CORS_ORIGIN: z.string().default(""),
@@ -19,6 +20,24 @@ const baseEnvShape = {
 const baseEnvSchema = z.object(baseEnvShape);
 
 export type BaseConfig = z.infer<typeof baseEnvSchema>;
+
+declare module "fastify" {
+  /**
+   * Everything reachable as `fastify.config`. A service merges its own variables in, derived from
+   * the shape it passed to `loadConfig` so schema and type cannot drift:
+   *
+   * ```ts
+   * interface FastifyConfig extends z.infer<z.ZodObject<typeof extraEnv>> {}
+   * ```
+   */
+  interface FastifyConfig extends BaseConfig {}
+
+  interface FastifyInstance {
+    readonly config: FastifyConfig;
+    /** A compile-time fact, so it is a `basePlugin` argument rather than an environment var. */
+    readonly serviceName: string;
+  }
+}
 
 function loadDotEnv() {
   try {
@@ -33,16 +52,7 @@ export function loadConfig<T extends z.ZodRawShape = Record<never, never>>(
 ): BaseConfig & z.infer<z.ZodObject<T>> {
   loadDotEnv();
 
-  const schema = z.object({ ...baseEnvShape, ...extra }).refine(
-    // `startService` drains before closing, and close-with-grace force-exits at the grace deadline.
-    // A drain at least as long as the grace period means the process is killed mid-drain and the
-    // connections it was protecting are dropped anyway.
-    (config) => config.SHUTDOWN_DELAY_MS < config.SHUTDOWN_GRACE_MS,
-    {
-      path: ["SHUTDOWN_DELAY_MS"],
-      error: "SHUTDOWN_DELAY_MS must be less than SHUTDOWN_GRACE_MS, or the drain never completes",
-    },
-  );
+  const schema = z.object({ ...baseEnvShape, ...extra });
 
   const result = schema.safeParse(process.env);
 
@@ -52,3 +62,24 @@ export function loadConfig<T extends z.ZodRawShape = Record<never, never>>(
 
   return result.data as BaseConfig & z.infer<z.ZodObject<T>>;
 }
+
+export interface ConfigPluginOptions {
+  readonly config: FastifyConfig;
+  /** Labels log lines and titles the OpenAPI document. */
+  readonly name: string;
+}
+
+/**
+ * Publishes the parsed environment as `fastify.config`. Register first — everything downstream
+ * reads it.
+ *
+ * `loadConfig` is not called here: a service needs its config before the instance exists, to build
+ * the constructor options, so it is passed in rather than parsed twice.
+ */
+export const configPlugin = fp<ConfigPluginOptions>(
+  async (fastify, { config, name }) => {
+    fastify.decorate("config", config);
+    fastify.decorate("serviceName", name);
+  },
+  { name: "config" },
+);

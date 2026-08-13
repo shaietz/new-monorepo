@@ -1,14 +1,16 @@
+import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
+import { expectBaseContract } from "@repo/fastify-base/testing";
 import type { FastifyInstance } from "fastify";
-import { buildServer } from "./app.ts";
+import app, { options } from "../src/app.ts";
 {{#if hasDataStore}}
-import type { ServerOverrides } from "./app.ts";
+import type { AppOptions } from "../src/app.ts";
 {{/if}}
 {{#if postgres}}
-import type { PgModule } from "./postgres.ts";
+import type { PgModule } from "../src/plugins/external/postgres.ts";
 {{/if}}
 {{#if redis}}
-import type { RedisClient } from "./redis.ts";
+import type { RedisClient } from "../src/plugins/external/redis.ts";
 {{/if}}
 
 const started: FastifyInstance[] = [];
@@ -41,14 +43,15 @@ function postgresStub(query: () => Promise<unknown>): PgModule {
 
 {{/if}}
 {{#if hasDataStore}}
-/** Healthy stand-ins, so the suite needs nothing running, unless a test overrides one. */
-async function build(overrides: ServerOverrides = {}) {
-  const server = await buildServer({
+/** Healthy stand-ins, so the suite needs nothing running unless a test substitutes one. */
+async function build(overrides: AppOptions = {}) {
+  const server = Fastify(options);
+  await server.register(app, {
 {{#if redis}}
-    redis: redisStub(async () => "PONG"),
+    redisClient: redisStub(async () => "PONG"),
 {{/if}}
 {{#if postgres}}
-    postgres: postgresStub(async () => ({ rows: [] })),
+    pg: postgresStub(async () => ({ rows: [] })),
 {{/if}}
     ...overrides,
   });
@@ -57,14 +60,24 @@ async function build(overrides: ServerOverrides = {}) {
   return server;
 }
 {{else}}
+/** Awaited rather than `ready()`, so a test can still add its own routes afterwards. */
 async function build() {
-  const server = await buildServer();
+  const server = Fastify(options);
+  await server.register(app);
+
   started.push(server);
   return server;
 }
 {{/if}}
 
+describe("base contract", () => {
+  it("wires up the shared stack correctly", async () => {
+    await expectBaseContract(await build());
+  });
+});
+
 describe("GET /ping", () => {
+  /** Comes from `src/routes/root.ts`, discovered by autoload rather than registered by hand. */
   it("returns pong", async () => {
     const server = await build();
     const res = await server.inject({ method: "GET", url: "/ping" });
@@ -129,7 +142,7 @@ describe("GET /readyz", () => {
 
   it("is unavailable when Redis stops answering", async () => {
     const server = await build({
-      redis: redisStub(async () => {
+      redisClient: redisStub(async () => {
         throw new Error("connection refused");
       }),
     });
@@ -143,7 +156,7 @@ describe("GET /readyz", () => {
 
   it("is unavailable when Postgres stops answering", async () => {
     const server = await build({
-      postgres: postgresStub(async () => {
+      pg: postgresStub(async () => {
         throw new Error("connection refused");
       }),
     });

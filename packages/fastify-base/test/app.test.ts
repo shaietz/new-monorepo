@@ -1,31 +1,32 @@
-import fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
-import type { FastifyInstance } from "fastify";
-import { loadConfig } from "./env.ts";
-import { basePlugin } from "./plugin.ts";
-import { serverOptions } from "./server-options.ts";
 
-const started: FastifyInstance[] = [];
+import { buildTestServer, closeTestServers } from "./fixtures/service.ts";
 
 afterEach(async () => {
-  await Promise.all(started.splice(0).map((server) => server.close()));
+  await closeTestServers();
   vi.unstubAllEnvs();
 });
 
-async function buildTestServer() {
-  const config = loadConfig();
-  const server = fastify(serverOptions(config, "test"));
+describe("autoload", () => {
+  /** `/ping` is not registered anywhere in this file — it comes from `test/fixtures/routes/root.ts`. */
+  it("registers the service's routes directory", async () => {
+    const server = await buildTestServer();
+    const res = await server.inject({ url: "/ping" });
 
-  await server.register(basePlugin, { config, name: "test" });
-  server.get("/ping", async () => "pong\n");
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe("pong\n");
+  });
 
-  started.push(server);
-  return server;
-}
+  it("still boots a service with no plugin or route directories of its own", async () => {
+    const server = await buildTestServer();
 
-describe("basePlugin", () => {
+    expect((await server.inject({ url: "/livez" })).statusCode).toBe(200);
+  });
+});
+
+describe("service app", () => {
   it("exposes metrics for the routes it has served", async () => {
     const server = await buildTestServer();
 
@@ -89,7 +90,7 @@ describe("basePlugin", () => {
   });
 
   it("decorates httpErrors from sensible", async () => {
-    const server = await buildTestServer();
+    const server = await buildTestServer({ silent: true });
     server.get("/gone", async () => {
       throw server.httpErrors.gone("finished");
     });
@@ -100,11 +101,25 @@ describe("basePlugin", () => {
     expect(res.json()).toMatchObject({ message: "finished" });
   });
 
+  it("publishes the parsed environment as fastify.config", async () => {
+    vi.stubEnv("RATE_LIMIT_MAX", "42");
+    const server = await buildTestServer({ name: "orders" });
+
+    expect(server.config.RATE_LIMIT_MAX).toBe(42);
+    expect(server.serviceName).toBe("orders");
+  });
+
+  /**
+   * Guards `clearRegisterOnInit` on the metrics plugin: prom-client's registry is global, so a
+   * second instance in the same process throws during boot without it — which is what building two
+   * servers here would surface. Scraping the second one proves the registry survived the reset.
+   */
   it("allows a second server in the same process", async () => {
     await buildTestServer();
     const second = await buildTestServer();
 
     expect((await second.inject({ url: "/livez" })).statusCode).toBe(200);
+    expect((await second.inject({ url: "/metrics" })).statusCode).toBe(200);
   });
 });
 
@@ -126,7 +141,7 @@ describe("request id header", () => {
   /** Set before rate limiting runs, so a shed request is still traceable. */
   it("is present on a rate-limited response", async () => {
     vi.stubEnv("RATE_LIMIT_MAX", "1");
-    const server = await buildTestServer();
+    const server = await buildTestServer({ silent: true });
 
     await server.inject({ url: "/ping" });
     const limited = await server.inject({ url: "/ping" });
@@ -136,55 +151,26 @@ describe("request id header", () => {
   });
 });
 
+/** Behaviour is covered in `plugins/external/cors.test.ts`; this is the wiring through autoload. */
 describe("cors", () => {
-  it("stays disabled when no origin is configured", async () => {
-    const server = await buildTestServer();
-    const res = await server.inject({
-      method: "OPTIONS",
-      url: "/ping",
-      headers: { origin: "https://elsewhere.dev", "access-control-request-method": "GET" },
-    });
-
-    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
-  });
-
-  it("honours a configured origin", async () => {
+  it("reaches the assembled service when configured", async () => {
     vi.stubEnv("CORS_ORIGIN", "https://allowed.dev");
     const server = await buildTestServer();
 
-    const allowed = await server.inject({
+    const res = await server.inject({
       method: "OPTIONS",
       url: "/ping",
       headers: { origin: "https://allowed.dev", "access-control-request-method": "GET" },
     });
-    const denied = await server.inject({
-      method: "OPTIONS",
-      url: "/ping",
-      headers: { origin: "https://denied.dev", "access-control-request-method": "GET" },
-    });
 
-    expect(allowed.headers["access-control-allow-origin"]).toBe("https://allowed.dev");
-    expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
-  });
-
-  it("allows a wildcard origin", async () => {
-    vi.stubEnv("CORS_ORIGIN", "*");
-    const server = await buildTestServer();
-
-    const res = await server.inject({
-      method: "OPTIONS",
-      url: "/ping",
-      headers: { origin: "https://anywhere.dev", "access-control-request-method": "GET" },
-    });
-
-    expect(res.headers["access-control-allow-origin"]).toBe("*");
+    expect(res.headers["access-control-allow-origin"]).toBe("https://allowed.dev");
   });
 });
 
 describe("rate limiting", () => {
   it("limits ordinary routes", async () => {
     vi.stubEnv("RATE_LIMIT_MAX", "2");
-    const server = await buildTestServer();
+    const server = await buildTestServer({ silent: true });
 
     expect((await server.inject({ url: "/ping" })).statusCode).toBe(200);
     expect((await server.inject({ url: "/ping" })).statusCode).toBe(200);

@@ -12,8 +12,11 @@
     "check-types": "tsc"
   },
   "dependencies": {
+    "@fastify/autoload": "^6.5.0",
     "@repo/fastify-base": "*",
-    "fastify": "^5.11.2"
+    "close-with-grace": "^2.5.0",
+    "fastify": "^5.11.2",
+    "fastify-plugin": "^6.0.0"
   },
   "devDependencies": {
     "@repo/typescript-config": "*",

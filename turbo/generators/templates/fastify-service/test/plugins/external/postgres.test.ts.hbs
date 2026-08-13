@@ -1,0 +1,63 @@
+import { buildWithPlugin, closeHarnesses } from "@repo/fastify-base/testing";
+import { afterEach, describe, expect, it } from "vitest";
+import postgres, { postgresOptions } from "../../../src/plugins/external/postgres.ts";
+import type { PgModule } from "../../../src/plugins/external/postgres.ts";
+
+afterEach(closeHarnesses);
+
+const config = { DATABASE_URL: "postgres://localhost/test", PG_POOL_MAX: 10 };
+
+/** `@fastify/postgres` only does `new pg.Pool(options)`, so a stand-in module is enough. */
+function stub(query: () => Promise<unknown>): PgModule {
+  class Pool {
+    query = query;
+    connect = async () => ({ query, release: () => {} });
+    end = (done?: () => void) => {
+      done?.();
+      return Promise.resolve();
+    };
+  }
+
+  return { Pool } as unknown as PgModule;
+}
+
+const build = (query: () => Promise<unknown>) =>
+  buildWithPlugin(postgres, { config, options: { pg: stub(query) } });
+
+describe("postgresOptions", () => {
+  it("dials DATABASE_URL when no module is injected", () => {
+    expect(postgresOptions(config)).toEqual({
+      connectionString: "postgres://localhost/test",
+      max: 10,
+      connectionTimeoutMillis: 2000,
+    });
+  });
+
+  it("hands an injected pg module to the plugin", () => {
+    const pgModule = stub(async () => ({ rows: [] }));
+
+    expect(postgresOptions(config, pgModule).pg).toBe(pgModule);
+  });
+});
+
+describe("the postgres plugin", () => {
+  it("decorates the server with a pool", async () => {
+    const server = await build(async () => ({ rows: [{ ok: 1 }] }));
+
+    await expect(server.pg.query("SELECT 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+  });
+
+  it("registers a readiness probe that passes while Postgres answers", async () => {
+    const server = await build(async () => ({ rows: [] }));
+
+    await expect(server.checkHealth()).resolves.toBe(true);
+  });
+
+  it("registers a readiness probe that fails when the query rejects", async () => {
+    const server = await build(async () => {
+      throw new Error("connection refused");
+    });
+
+    await expect(server.checkHealth()).resolves.toBe(false);
+  });
+});

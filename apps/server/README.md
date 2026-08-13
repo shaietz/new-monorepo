@@ -29,7 +29,7 @@ To add a service-specific variable, pass it to `loadConfig`:
 import { loadConfig } from "@repo/fastify-base";
 import { z } from "zod";
 
-export const config = loadConfig({
+const config = loadConfig({
   DATABASE_URL: z.url(),
   MAX_RETRIES: z.coerce.number().default(3),
 });
@@ -47,12 +47,13 @@ service that starts and quietly fails readiness.
 
 ## Endpoints
 
-`GET /ping` is this service's own. The rest come from `basePlugin`:
+`GET /ping` is this service's own, from `src/routes/root.ts`. The rest come from
+`@repo/fastify-base`:
 
 | Route      | Purpose                                                                             |
 | ---------- | ----------------------------------------------------------------------------------- |
 | `/livez`   | Liveness. Checks no dependencies, and keeps answering 200 even while shutting down. |
-| `/readyz`  | Readiness. 503 when the health check fails, times out, or the service is draining.  |
+| `/readyz`  | Readiness. 503 when a registered health check fails or times out.                   |
 | `/metrics` | Prometheus exposition, including per-route request durations.                       |
 | `/docs`    | OpenAPI UI, only when `ENABLE_DOCS=true`.                                           |
 

@@ -1,19 +1,29 @@
-import fastify from "fastify";
+import { join } from "node:path";
+import autoload from "@fastify/autoload";
+import fp from "fastify-plugin";
 import { basePlugin, loadConfig, serverOptions } from "@repo/fastify-base";
 
-const SERVICE_NAME = "server";
+const NAME = "server";
 
 export const config = loadConfig();
+export const options = serverOptions(config, NAME);
 
-/** `cfg` is a parameter so tests can build a server without stubbing the environment first. */
-export async function buildServer(cfg: typeof config = config) {
-  const server = fastify(serverOptions(cfg, SERVICE_NAME));
+/**
+ * `fp` so the error handler, schema compilers and decorators inside `basePlugin` apply to the root
+ * instance rather than a throwaway child scope.
+ */
+export default fp(
+  async function app(fastify) {
+    await fastify.register(basePlugin, { config, name: NAME });
 
-  await server.register(basePlugin, { config: cfg, name: SERVICE_NAME });
-
-  server.get("/ping", async () => {
-    return "pong\n";
-  });
-
-  return server;
-}
+    await fastify.register(autoload, {
+      dir: join(import.meta.dirname, "routes"),
+      // Required: autoload reads `options.prefix` unguarded when a plugin exports `autoConfig` as a
+      // function, and throws on `undefined`.
+      options: {},
+      autoHooks: true,
+      cascadeHooks: true,
+    });
+  },
+  { name: `${NAME}-app` },
+);

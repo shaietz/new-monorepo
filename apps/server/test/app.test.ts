@@ -1,6 +1,8 @@
+import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
+import { expectBaseContract } from "@repo/fastify-base/testing";
 import type { FastifyInstance } from "fastify";
-import { buildServer } from "./app.ts";
+import app, { options } from "../src/app.ts";
 
 const started: FastifyInstance[] = [];
 
@@ -8,13 +10,23 @@ afterEach(async () => {
   await Promise.all(started.splice(0).map((server) => server.close()));
 });
 
+/** Awaited rather than `ready()`, so a test can still add its own routes afterwards. */
 async function build() {
-  const server = await buildServer();
+  const server = Fastify(options);
+  await server.register(app);
+
   started.push(server);
   return server;
 }
 
+describe("base contract", () => {
+  it("wires up the shared stack correctly", async () => {
+    await expectBaseContract(await build());
+  });
+});
+
 describe("GET /ping", () => {
+  /** Comes from `src/routes/root.ts`, discovered by autoload rather than registered by hand. */
   it("returns pong", async () => {
     const server = await build();
     const res = await server.inject({ method: "GET", url: "/ping" });

@@ -1,13 +1,17 @@
-export { loadConfig } from "./env.ts";
+export { basePlugin } from "./base.ts";
+
+export { configPlugin, loadConfig } from "./config.ts";
 export { serverOptions } from "./server-options.ts";
-export { basePlugin } from "./plugin.ts";
-export { startService } from "./start.ts";
+export { rateLimitOptions } from "./rate-limit.ts";
 
-/** @public — services type their own config with this; nothing in here references it. */
-export type { BaseConfig } from "./env.ts";
+export { requestIdPlugin } from "./request-id.ts";
+export { zodPlugin } from "./zod.ts";
+export { corsPlugin } from "./cors.ts";
+export { errorHandlerPlugin } from "./error-handler.ts";
+export { swaggerPlugin } from "./swagger.ts";
+export { healthPlugin, healthRegistryPlugin, LIVEZ_PATH, READYZ_PATH } from "./health.ts";
+export { METRICS_PATH, metricsPlugin } from "./metrics.ts";
 
-/** @public — the options contract for services registering the plugin. */
-export type { BasePluginOptions } from "./plugin.ts";
-
-/** @public — services pass this to `.withTypeProvider<…>()` for inferred request and reply types. */
-export type { ZodTypeProvider } from "@fastify/type-provider-zod";
+export type { BaseConfig, ConfigPluginOptions } from "./config.ts";
+export type { ServerOptions } from "./server-options.ts";
+export type { FastifyPluginAsyncZod, ZodTypeProvider } from "./zod.ts";
