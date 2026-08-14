@@ -77,10 +77,6 @@ const STORE_FILES = {
     "templates/fastify-service/src/plugins/external/postgres.ts.hbs",
     "templates/fastify-service/test/plugins/external/postgres.test.ts.hbs",
   ],
-  trpc: [
-    "templates/fastify-service/src/plugins/external/trpc.ts.hbs",
-    "templates/fastify-service/src/trpc/router.ts.hbs",
-  ],
 } as const;
 
 /**
@@ -225,12 +221,6 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         message: "Add a Postgres client (@fastify/postgres)?",
         default: false,
       },
-      {
-        type: "confirm",
-        name: "trpc",
-        message: "Add tRPC support (@trpc/server + fastify adapter)?",
-        default: false,
-      },
     ],
     actions: (answers) => {
       const { redis, postgres } = answers as { redis: boolean; postgres: boolean };
@@ -246,7 +236,6 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
             ignore: [
               ...(redis ? [] : STORE_FILES.redis),
               ...(postgres ? [] : STORE_FILES.postgres),
-              ...(answers.trpc ? [] : STORE_FILES.trpc),
             ],
           },
           // Handlebars reads `redis` and `postgres` straight off the answers, so only the derived

@@ -13,15 +13,15 @@ export interface TrpcPluginOptions {
 
 export default fp<TrpcPluginOptions>(
   async (fastify, { router, prefix = "/trpc" }) => {
-    // If the generator didn't provide a router, register an empty router so the endpoint exists.
     const effectiveRouter = router ?? initTRPC.create().router({});
 
     await fastify.register(fastifyTRPCPlugin, {
       prefix,
-      trpcOptions: { router: effectiveRouter, createContext: () => ({}) },
+      trpcOptions: {
+        router: effectiveRouter,
+        createContext: () => ({}),
+      },
     });
-
-    fastify.addHealthCheck("trpc", async () => true);
   },
   { name: "trpc" },
 );
