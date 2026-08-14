@@ -1,5 +1,3 @@
-import { join } from "node:path";
-import autoload from "@fastify/autoload";
 import fp from "fastify-plugin";
 {{#if hasDataStore}}
 import { z } from "zod";
@@ -76,14 +74,6 @@ export default fp<AppOptions>(
     // Prefer an injected router for tests; fall back to the generated `appRouter` for the
     // real service.
     await fastify.register(trpcPlugin, { router: opts.trpcRouter ?? appRouter });
-    await fastify.register(autoload, {
-      dir: join(import.meta.dirname, "routes"),
-      // Required: autoload reads `options.prefix` unguarded when a plugin exports `autoConfig` as a
-      // function, and throws on `undefined`.
-      options: {},
-      autoHooks: true,
-      cascadeHooks: true,
-    });
   },
   { name: `${NAME}-app` },
 );
