@@ -1,0 +1,27 @@
+import fp from "fastify-plugin";
+import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
+import { initTRPC } from "@trpc/server";
+import type { AnyRouter } from "@trpc/server";
+
+export type AppRouter = AnyRouter;
+
+export interface TrpcPluginOptions {
+  /** A stand-in router so tests need not wire tRPC. */
+  readonly router?: AppRouter | undefined;
+  readonly prefix?: string | undefined;
+}
+
+export default fp<TrpcPluginOptions>(
+  async (fastify, { router, prefix = "/trpc" }) => {
+    const effectiveRouter = router ?? initTRPC.create().router({});
+
+    await fastify.register(fastifyTRPCPlugin, {
+      prefix,
+      trpcOptions: {
+        router: effectiveRouter,
+        createContext: () => ({}),
+      },
+    });
+  },
+  { name: "trpc" },
+);

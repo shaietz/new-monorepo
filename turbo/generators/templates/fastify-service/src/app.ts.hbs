@@ -1,5 +1,3 @@
-import { join } from "node:path";
-import autoload from "@fastify/autoload";
 import fp from "fastify-plugin";
 {{#if hasDataStore}}
 import { z } from "zod";
@@ -13,6 +11,9 @@ import type { PgModule } from "./plugins/external/postgres.ts";
 import redisPlugin from "./plugins/external/redis.ts";
 import type { RedisClient } from "./plugins/external/redis.ts";
 {{/if}}
+import trpcPlugin from "./plugins/external/trpc.ts";
+import type { AppRouter } from "./plugins/external/trpc.ts";
+import { appRouter } from "./router/index.ts";
 
 const NAME = "{{ dashCase name }}";
 
@@ -35,9 +36,13 @@ export const config = loadConfig(extraEnv);
 declare module "fastify" {
   interface FastifyConfig extends z.infer<z.ZodObject<typeof extraEnv>> {}
 }
+{{else}}
+export const config = loadConfig();
+{{/if}}
 
 /** Stand-in clients a test can substitute; production registers the real ones. */
 export interface AppOptions {
+  readonly trpcRouter?: AppRouter | undefined;
 {{#if postgres}}
   readonly pg?: PgModule | undefined;
 {{/if}}
@@ -45,9 +50,6 @@ export interface AppOptions {
   readonly redisClient?: RedisClient | undefined;
 {{/if}}
 }
-{{else}}
-export const config = loadConfig();
-{{/if}}
 
 export const options = serverOptions(config, NAME);
 
@@ -59,8 +61,8 @@ export const options = serverOptions(config, NAME);
  * OpenAPI, the error handler. To change one of those, replace this line with the individual plugins
  * it registers; see `@repo/fastify-base`'s README.
  */
-export default fp{{#if hasDataStore}}<AppOptions>{{/if}}(
-  async function app(fastify{{#if hasDataStore}}, opts{{/if}}) {
+export default fp<AppOptions>(
+  async function app(fastify, opts) {
     await fastify.register(basePlugin, { config, name: NAME });
 
 {{#if postgres}}
@@ -69,14 +71,9 @@ export default fp{{#if hasDataStore}}<AppOptions>{{/if}}(
 {{#if redis}}
     await fastify.register(redisPlugin, { client: opts.redisClient });
 {{/if}}
-    await fastify.register(autoload, {
-      dir: join(import.meta.dirname, "routes"),
-      // Required: autoload reads `options.prefix` unguarded when a plugin exports `autoConfig` as a
-      // function, and throws on `undefined`.
-      options: {},
-      autoHooks: true,
-      cascadeHooks: true,
-    });
+    // Prefer an injected router for tests; fall back to the generated `appRouter` for the
+    // real service.
+    await fastify.register(trpcPlugin, { router: opts.trpcRouter ?? appRouter });
   },
   { name: `${NAME}-app` },
 );

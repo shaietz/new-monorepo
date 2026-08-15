@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/router/index.ts"
+  },
   "scripts": {
     "dev": "node --watch src/index.ts",
     "start": "node src/index.ts",
@@ -18,7 +21,7 @@
 {{#if redis}}
     "@fastify/redis": "^8.0.0",
 {{/if}}
-    "@fastify/autoload": "^6.5.0",
+    "@trpc/server": "^10.0.0",
     "@repo/fastify-base": "*",
     "close-with-grace": "^2.5.0",
     "fastify": "^5.11.2",

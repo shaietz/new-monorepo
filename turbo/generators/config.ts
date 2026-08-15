@@ -171,28 +171,6 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
 
   plop.setActionType("install", installAction);
 
-  plop.setGenerator("react-app", {
-    description: "A React 19 + Vite single-page app in apps/",
-    prompts: [
-      {
-        type: "input",
-        name: "name",
-        message: "App name (kebab-case; becomes apps/<name>)",
-        validate: validateName,
-      },
-    ],
-    actions: [
-      {
-        type: "addMany",
-        destination: "apps/{{ dashCase name }}",
-        base: "templates/react-app",
-        templateFiles: "templates/react-app/**/*",
-        globOptions: { dot: true },
-      },
-      { type: "install" },
-    ],
-  });
-
   plop.setGenerator("fastify-service", {
     description: "A Fastify 5 service in apps/, built on @repo/fastify-base",
     prompts: [
@@ -223,9 +201,21 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
       },
     ],
     actions: (answers) => {
-      const { redis, postgres } = answers as { redis: boolean; postgres: boolean };
+      const { redis, postgres } = answers as {
+        redis: boolean;
+        postgres: boolean;
+        name: string;
+      };
 
       return [
+        {
+          type: "addMany",
+          destination: "packages/{{ dashCase name }}-api",
+          base: "templates/trpc-package",
+          templateFiles: "templates/trpc-package/**/*",
+          globOptions: { dot: true },
+          data: ENVIRONMENTS.node,
+        },
         {
           type: "addMany",
           destination: "apps/{{ dashCase name }}",
@@ -245,6 +235,28 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         { type: "install" },
       ];
     },
+  });
+
+  plop.setGenerator("react-app", {
+    description: "A React 19 + Vite single-page app in apps/",
+    prompts: [
+      {
+        type: "input",
+        name: "name",
+        message: "App name (kebab-case; becomes apps/<name>)",
+        validate: validateName,
+      },
+    ],
+    actions: [
+      {
+        type: "addMany",
+        destination: "apps/{{ dashCase name }}",
+        base: "templates/react-app",
+        templateFiles: "templates/react-app/**/*",
+        globOptions: { dot: true },
+      },
+      { type: "install" },
+    ],
   });
 
   plop.setGenerator("package", {
@@ -272,7 +284,9 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
       },
     ],
     actions: (answers) => {
-      const { environment } = answers as { environment: PackageEnvironment };
+      const { environment } = answers as {
+        environment: PackageEnvironment;
+      };
 
       return [
         {

@@ -1,0 +1,53 @@
+# `@repo/{{ name }}-api`
+
+Shared tRPC utilities for the matching Fastify service.
+
+This package exports the generated service's tRPC router alongside the small helpers used to build
+routes:
+
+```ts
+import { appRouter, router, publicProcedure } from "@repo/{{ name }}-api";
+
+const api = router({
+	// use `publicProcedure` to build routes shared with the service
+});
+```
+
+When you generate a Fastify service called `foo` the generator creates `packages/foo-api` and
+publishes it locally as `@repo/foo-api`. The generated service imports from that package so your
+service and package remain decoupled at development time, while this package also re-exports the
+service's `appRouter` for clients and tests.
+
+Add it to a workspace in the usual way (the generator already places it under `packages/`):
+
+```bash
+npm install @repo/{{ name }}-api -w <workspace>
+```
+
+## Scripts
+
+- `test` — `vitest run`
+- `test:watch` — `vitest`
+- `test:coverage` — `vitest run --coverage`
+- `check-types` — `tsc`
+
+Run them from the repo root, or with Turbo: `npx turbo run test --filter=@repo/{{ packageName }}`.
+
+## Boundaries
+
+`turbo.json` tags this workspace `["{{ tag }}"]`. The package's `tsconfig` and tag enforce what it may
+depend on (see `@repo/typescript-config` for details).
+
+{{#if isBrowser}}
+This package targets the browser; it extends `@repo/typescript-config/react.json`.
+{{else if isNode}}
+This package targets Node; it extends `@repo/typescript-config/node.json`.
+{{else}}
+This package is isomorphic; it extends `@repo/typescript-config/library.json` and avoids Node-only
+APIs so it can be used by both client and server code.
+{{/if}}
+
+## Exports
+
+Public surface is exported from `src/index.ts`. Keep public symbols small and tag intended exports
+`@public` so `knip` does not report them as unused.
