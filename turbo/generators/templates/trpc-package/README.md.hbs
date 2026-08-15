@@ -1,55 +1,51 @@
-# `@repo/{{ name }}`
+# `@repo/{{ name }}-api`
 
-TODO: say what this package is for.
+Shared tRPC utilities for the matching Fastify service.
 
-## Usage
+This package exports a small tRPC surface intended to be used by the generated service:
 
 ```ts
-import { greeting } from "@repo/{{ name }}";
+import { router, publicProcedure } from "@repo/{{ name }}-api";
 
-greeting("world"); // "Hello, world!"
+const api = router({
+	// use `publicProcedure` to build routes shared with the service
+});
 ```
 
-Add it to a workspace with `npm install @repo/{{ name }} -w <that-workspace>`, which pins it at `*`
-the way `npm run syncpack` requires for local packages.
+When you generate a Fastify service called `foo` the generator creates `packages/foo-api` and
+publishes it locally as `@repo/foo-api`. The generated service imports from that package so your
+service and package remain decoupled at development time.
+
+Add it to a workspace in the usual way (the generator already places it under `packages/`):
+
+```bash
+npm install @repo/{{ name }}-api -w <workspace>
+```
 
 ## Scripts
 
-| Script          | What it does                           |
-| --------------- | -------------------------------------- |
-| `test`          | Vitest, once.                          |
-| `test:watch`    | Vitest in watch mode.                  |
-| `test:coverage` | Vitest with v8 coverage, gated at 80%. |
-| `check-types`   | `tsc`.                                 |
+- `test` — `vitest run`
+- `test:watch` — `vitest`
+- `test:coverage` — `vitest run --coverage`
+- `check-types` — `tsc`
 
-Run them from the repo root with `npm run <script> -w @repo/{{ name }}`, or through turbo
-(`npx turbo run test --filter=@repo/{{ name }}`).
-
-There is no `build`. The package ships TypeScript source — `exports` points straight at
-`src/index.ts`, Node 24 strips the types at load, and Vite compiles it for the browser.
+Run them from the repo root, or with Turbo: `npx turbo run test --filter=@repo/{{ packageName }}`.
 
 ## Boundaries
 
-`turbo.json` tags this workspace `["{{ tag }}"]`, and `npm run boundaries` enforces what that lets
-it depend on.
+`turbo.json` tags this workspace `["{{ tag }}"]`. The package's `tsconfig` and tag enforce what it may
+depend on (see `@repo/typescript-config` for details).
 
 {{#if isBrowser}}
-A `browser` workspace may not depend on a `node` one. `tsconfig.json` extends
-`@repo/typescript-config/react.json`, so `types` is `["vite/client"]` and `tsc` rejects `process` or
-`node:fs` here — the tag and the tsconfig enforce the same rule from two directions. `vite` is a
-devDependency for that `vite/client` types entry alone, not because this package bundles anything.
+This package targets the browser; it extends `@repo/typescript-config/react.json`.
 {{else if isNode}}
-A `node` workspace may not depend on a `browser` one. `tsconfig.json` extends
-`@repo/typescript-config/node.json`, so `types` is `["node"]` and Node APIs are available.
+This package targets Node; it extends `@repo/typescript-config/node.json`.
 {{else}}
-An `isomorphic` workspace may depend on neither `node` nor `browser` — it has to run in both.
-`tsconfig.json` extends `@repo/typescript-config/library.json`, so `types` is `[]` and `tsc` rejects
-`process`, `node:fs` and `document` alike. This is where Zod schemas shared between a client and a
-service belong.
+This package is isomorphic; it extends `@repo/typescript-config/library.json` and avoids Node-only
+APIs so it can be used by both client and server code.
 {{/if}}
 
 ## Exports
 
-Everything public goes through `src/index.ts`. `npm run knip` runs with `includeEntryExports`, so an
-export nothing imports is reported as dead code — tag a deliberate one `@public`, the way
-[`@repo/fastify-base`](../fastify-base/src/index.ts) does.
+Public surface is exported from `src/index.ts`. Keep public symbols small and tag intended exports
+`@public` so `knip` does not report them as unused.
