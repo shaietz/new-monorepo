@@ -31,8 +31,12 @@ src/
   plugins/               your own plugins, registered explicitly from app.ts
   routes/                the API surface; autoloaded, directory names are URL prefixes
   schemas/               Zod schemas shared between routes
-test/                    mirrors src/; never inside it
-```
+{{#if postgres}}  db/
+    schemas/             Drizzle table definitions
+    migrations/          generated SQL — committed, never hand-edited
+{{/if}}test/                    mirrors src/; never inside it
+{{#if postgres}}drizzle.config.ts        drizzle-kit's view of src/db
+{{/if}}```
 
 Tests live in `test/`, not beside the code they cover. Autoload matches `foo.test.ts` as readily as
 `foo.ts`, so a colocated test beside a route would be registered as a route.
@@ -71,9 +75,13 @@ const extraEnv = {
 
 const config = loadConfig(extraEnv);
 
-// Makes the same variables reachable as `fastify.config` from every plugin and route.
+// Makes the same variables reachable as `fastify.config` from every plugin and route. Named rather
+// than inlined below: oxlint's `import/namespace` cannot follow `z.infer` into a `declare module`
+// block, and reports it as missing from `zod`.
+type ExtraEnv = z.infer<z.ZodObject<typeof extraEnv>>;
+
 declare module "fastify" {
-  interface FastifyConfig extends z.infer<z.ZodObject<typeof extraEnv>> {}
+  interface FastifyConfig extends ExtraEnv {}
 }
 ```
 
@@ -98,17 +106,17 @@ until the connection returns — without that, a `/readyz` request would hang ra
 
 {{/if}}
 {{#if postgres}}
-[`@fastify/postgres`](https://github.com/fastify/fastify-postgres) builds a `pg` pool from
-`DATABASE_URL` and `PG_POOL_MAX`, and decorates the server with `server.pg` — `query`, `connect`,
-`transact`, and the pool itself. The pool is lazy, so nothing connects until the first query, and
-`connectionTimeoutMillis` is set because pg otherwise waits forever for one.
+`src/plugins/external/postgres.ts` builds a `pg` pool from `DATABASE_URL` and `PG_POOL_MAX`, hands
+it to Drizzle, and decorates the server with `server.db`. The pool is lazy, so nothing connects
+until the first query; `connectionTimeoutMillis` is set because pg otherwise waits forever for one,
+and the plugin drains the pool on `onClose`.
 
 {{/if}}
-Each client lives in its own file under `src/plugins/external/`, autoloaded after everything
-`@repo/fastify-base` registers. Both register a readiness probe on the way in:
+Each client lives in its own file under `src/plugins/external/`, registered after everything
+`@repo/fastify-base` provides. Each registers a readiness probe on the way in:
 
 ```ts
-fastify.addHealthCheck("postgres", () => fastify.pg.query("SELECT 1"));
+fastify.addHealthCheck("postgres", () => client.query("SELECT 1"));
 ```
 
 `/readyz` runs every registered probe under `HEALTH_TIMEOUT_MS` and reports 503 while any of them
@@ -116,8 +124,78 @@ rejects or hangs, recovering on its own once the store is back. Ordinary traffic
 `/ping` and `/livez` keep answering 200.
 
 Both clients are registered from `app.ts` with ordinary plugin options, so a test substitutes a
-stand-in by passing one: `register(app, { pg: stub })`. That is why `test/app.test.ts` runs with
+stand-in by passing one: `register(app, { pool: stub })`. That is why `test/app.test.ts` runs with
 nothing installed.
+
+{{/if}}
+{{#if postgres}}
+## Database
+
+[Drizzle](https://orm.drizzle.team) owns the pool outright. `server.db` is typed against everything
+`src/db/schemas/` exports:
+
+```ts
+// src/routes/things.ts
+import { items } from "../db/schemas/index.ts";
+
+const rows = await fastify.db.select().from(items).limit(10);
+```
+
+Import schemas relatively, as everything else here does. **Do not reach for a `paths` alias** —
+there is no build step, so Node resolves every specifier itself and never reads `tsconfig.json`; an
+`@/db/…` import typechecks clean and then dies at boot with `ERR_MODULE_NOT_FOUND`. If the relative
+depth ever does become worth solving, the working tool is a
+[Node subpath import](https://nodejs.org/api/packages.html#subpath-imports) in `package.json`, which
+must start with `#`.
+
+There is deliberately **one** query API. Raw SQL goes through ``fastify.db.execute(sql`…`)``, and
+`fastify.db.$client` is the pool itself for the rare thing neither covers. A second decorator over
+the same pool — `@fastify/postgres`'s `server.pg`, say — would look convenient and quietly break
+transactions: its `transact()` checks out its own client, so anything done through `fastify.db`
+inside that callback runs on a different connection and escapes the rollback. Use
+`fastify.db.transaction()`, which cannot have that problem:
+
+```ts
+await fastify.db.transaction(async (tx) => {
+  await tx.insert(items).values({ name });
+});
+```
+
+```
+src/db/
+  schemas/
+    index.ts             the barrel drizzle-kit and the plugin both read
+    example.ts           a placeholder table — replace it
+  migrations/            generated SQL plus meta/_journal.json
+```
+
+Adding a table means writing it in `src/db/schemas/`, re-exporting it from `index.ts`, and
+generating a migration. A table missing from the barrel is invisible to both `server.db` and
+`db:generate`.
+
+`src/db` is excluded from coverage in `vitest.config.ts`. Table definitions are data, not behaviour
+— the callbacks in `$defaultFn`, `references` and `relations` are stored at import rather than run,
+so v8 counts an ordinary schema as dead code and pulls `% Funcs` below the 80% gate.
+
+| Script        | What it does                                                                       |
+| ------------- | ---------------------------------------------------------------------------------- |
+| `db:generate` | Diffs `src/db/schemas/` against `src/db/migrations/` and writes the next SQL file. |
+| `db:migrate`  | Applies pending migrations to `DATABASE_URL`.                                      |
+| `db:studio`   | Opens Drizzle Studio against `DATABASE_URL`.                                       |
+
+Run them from the repo root: `npm run db:generate -w {{ name }}`. drizzle-kit reads `DATABASE_URL`
+from `.env` through `drizzle.config.ts`, which loads it the same way `loadConfig` does.
+
+Migrations are committed. Generate them, read the SQL before committing, and never edit one that has
+already been applied — write a new one instead.
+
+**`casing: "snake_case"` is set twice**, in `drizzle.config.ts` and in the `drizzle()` call. Both
+have to agree: with only one of them set, migrations create `createdAt` while queries ask for
+`created_at`, and nothing catches it until runtime.
+
+`drizzle-kit` is a devDependency, so `npm ci --omit=dev` leaves it out of the container image.
+Migrating is a deploy step run from the repo — not something the service does to itself at boot,
+which would race across replicas.
 
 {{/if}}
 ## Endpoints
@@ -125,12 +203,12 @@ nothing installed.
 `GET /ping` is this service's own, from `src/routes/root.ts`. The rest come from
 `@repo/fastify-base`:
 
-| Route      | Purpose                                                                              |
-| ---------- | ------------------------------------------------------------------------------------ |
-| `/livez`   | Liveness. Checks no dependencies, and keeps answering 200 even while shutting down.  |
-| `/readyz`  | Readiness. 503 when a registered health check fails or times out.   |
-| `/metrics` | Prometheus exposition, including per-route request durations.                        |
-| `/docs`    | OpenAPI UI, only when `ENABLE_DOCS=true`.                                            |
+| Route      | Purpose                                                                             |
+| ---------- | ----------------------------------------------------------------------------------- |
+| `/livez`   | Liveness. Checks no dependencies, and keeps answering 200 even while shutting down. |
+| `/readyz`  | Readiness. 503 when a registered health check fails or times out.                   |
+| `/metrics` | Prometheus exposition, including per-route request durations.                       |
+| `/docs`    | OpenAPI UI, only when `ENABLE_DOCS=true`.                                           |
 
 Point the load balancer at `/readyz`, not `/livez`.
 

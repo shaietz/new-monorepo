@@ -1,50 +1,77 @@
 import { buildWithPlugin, closeHarnesses } from "@repo/fastify-base/testing";
-import { afterEach, describe, expect, it } from "vitest";
-import postgres, { postgresOptions } from "../../../src/plugins/external/postgres.ts";
-import type { PgModule } from "../../../src/plugins/external/postgres.ts";
+import { sql } from "drizzle-orm";
+import { Pool as PgPool } from "pg";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import postgres, { poolOptions } from "../../../src/plugins/external/postgres.ts";
+import type { Pool } from "../../../src/plugins/external/postgres.ts";
 
 afterEach(closeHarnesses);
 
 const config = { DATABASE_URL: "postgres://localhost/test", PG_POOL_MAX: 10 };
 
-/** `@fastify/postgres` only does `new pg.Pool(options)`, so a stand-in module is enough. */
-function stub(query: () => Promise<unknown>): PgModule {
-  class Pool {
+/**
+ * Drizzle only ever calls `query` on the pool it is handed, so a stand-in is enough. A class rather
+ * than an object literal: Drizzle sniffs a plain `Object` as a config argument.
+ */
+function stubPool(query: () => Promise<unknown>): Pool {
+  class StubPool {
     query = query;
     connect = async () => ({ query, release: () => {} });
-    end = (done?: () => void) => {
-      done?.();
-      return Promise.resolve();
-    };
+    end = async () => {};
   }
 
-  return { Pool } as unknown as PgModule;
+  return new StubPool() as unknown as Pool;
 }
 
 const build = (query: () => Promise<unknown>) =>
-  buildWithPlugin(postgres, { config, options: { pg: stub(query) } });
+  buildWithPlugin(postgres, { config, options: { pool: stubPool(query) } });
 
-describe("postgresOptions", () => {
-  it("dials DATABASE_URL when no module is injected", () => {
-    expect(postgresOptions(config)).toEqual({
+describe("poolOptions", () => {
+  it("dials DATABASE_URL with a bounded connection timeout", () => {
+    expect(poolOptions(config)).toEqual({
       connectionString: "postgres://localhost/test",
       max: 10,
       connectionTimeoutMillis: 2000,
     });
   });
-
-  it("hands an injected pg module to the plugin", () => {
-    const pgModule = stub(async () => ({ rows: [] }));
-
-    expect(postgresOptions(config, pgModule).pg).toBe(pgModule);
-  });
 });
 
 describe("the postgres plugin", () => {
-  it("decorates the server with a pool", async () => {
+  it("decorates the server with a Drizzle client", async () => {
+    const server = await build(async () => ({ rows: [] }));
+
+    expect(server.db).toBeDefined();
+  });
+
+  it("builds its own pool when none is injected", async () => {
+    // A pg pool is lazy, so this dials nothing; `closeHarnesses` drains it either way.
+    const server = await buildWithPlugin(postgres, { config });
+
+    expect(server.db.$client).toBeInstanceOf(PgPool);
+  });
+
+  it("queries through the pool it was given", async () => {
+    const query = vi.fn<() => Promise<unknown>>(async () => ({ rows: [{ ok: 1 }] }));
+    const server = await build(query);
+
+    await expect(server.db.execute(sql`select 1`)).resolves.toEqual({ rows: [{ ok: 1 }] });
+    expect(query).toHaveBeenCalled();
+  });
+
+  it("exposes the pool as $client, for what Drizzle cannot express", async () => {
     const server = await build(async () => ({ rows: [{ ok: 1 }] }));
 
-    await expect(server.pg.query("SELECT 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+    await expect(server.db.$client.query("SELECT 1")).resolves.toEqual({ rows: [{ ok: 1 }] });
+  });
+
+  it("drains the pool when the server closes", async () => {
+    const pool = stubPool(async () => ({ rows: [] }));
+    const end = vi.spyOn(pool, "end");
+    const server = await buildWithPlugin(postgres, { config, options: { pool } });
+
+    await server.close();
+
+    expect(end).toHaveBeenCalled();
   });
 
   it("registers a readiness probe that passes while Postgres answers", async () => {

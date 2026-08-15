@@ -30,10 +30,10 @@ const extraEnv = { DATABASE_URL: z.url() };
 export const config = loadConfig(extraEnv);
 export const options = serverOptions(config, NAME);
 
-// Makes these reachable as `fastify.config`, typed from the schema above so the runtime shape and
-// the type cannot drift.
+type ExtraEnv = z.infer<z.ZodObject<typeof extraEnv>>;
+
 declare module "fastify" {
-  interface FastifyConfig extends z.infer<z.ZodObject<typeof extraEnv>> {}
+  interface FastifyConfig extends ExtraEnv {}
 }
 
 export default fp(
