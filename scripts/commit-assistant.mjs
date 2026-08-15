@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { openSync, writeFileSync } from "node:fs";
+import { openSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import tty from "node:tty";
@@ -24,6 +24,26 @@ function runCommitlint() {
     cwd: rootDir,
     encoding: "utf8",
   });
+}
+
+// Pulls a subject candidate out of the message the user originally typed
+// (the one that just failed commitlint), so the wizard can offer it back
+// instead of starting from a blank subject. Strips a conventional-commit
+// `type(scope): ` prefix if there is one, since the wizard asks for type
+// and scope separately.
+function extractOriginalSubject() {
+  let raw;
+  try {
+    raw = readFileSync(messageFile, "utf8");
+  } catch {
+    return "";
+  }
+  const header = raw.split("\n").find((line) => line.trim() && !line.startsWith("#"));
+  if (!header) {
+    return "";
+  }
+  const conventional = header.match(/^\w+(?:\([^)]*\))?!?:\s*(.*)$/);
+  return (conventional ? conventional[1] : header).trim();
 }
 
 // Our hook (.husky/commit-msg) invokes this script with no shell-level
@@ -92,17 +112,46 @@ function exit(code, io) {
   process.exit(code);
 }
 
+// cz-git's `subject` question hardcodes `validate` to reject an empty
+// answer ("[ERROR] subject is required") with no config flag to turn that
+// off. Intercept the question list cz-git builds and strip that one check
+// so leaving the prompt blank is accepted; length limits still apply to
+// whatever the user does type. Also seeds the prompt's `completeValue`
+// (cz-git's ghost-text autofill: shown greyed out, accepted by pressing
+// Tab/Right, or submitted as-is on a bare Enter) with the subject the user
+// originally typed, so fixing a mis-formatted message doesn't mean retyping
+// it from scratch.
+function allowEmptySubject(questions, defaultSubject) {
+  for (const question of questions) {
+    if (question?.name === "subject" && typeof question.validate === "function") {
+      const originalValidate = question.validate;
+      question.validate = (subject, answers) =>
+        subject?.trim() ? originalValidate(subject, answers) : true;
+      if (defaultSubject) {
+        question.completeValue = defaultSubject;
+      }
+    }
+  }
+  return questions;
+}
+
 // Drives the commitizen `cz-git` adapter directly (rather than shelling out
 // to `git-cz`), so it can share the TTY streams we've already wired up for
 // this hook invocation.
-function runCommitizen(io) {
+function runCommitizen(io, defaultSubject) {
   const prompt = createPromptModule({ input: io.input, output: io.output });
+  const promptWithOptionalSubject = (questions) =>
+    prompt(allowEmptySubject(questions, defaultSubject));
   return new Promise((resolve) => {
     // cz-git registers extra prompt types (search-list, etc.) onto `cz`
     // before calling `cz.prompt`, so unlike the plain `{ prompt }` shape
     // used previously, it needs `registerPrompt` too.
     czAdapter.prompter(
-      { prompt, registerPrompt: prompt.registerPrompt.bind(prompt), Separator },
+      {
+        prompt: promptWithOptionalSubject,
+        registerPrompt: prompt.registerPrompt.bind(prompt),
+        Separator,
+      },
       resolve,
     );
   });
@@ -162,7 +211,12 @@ async function main() {
   io.output.write("\nOpening commitizen...\n\n");
 
   try {
-    const message = await runCommitizen(io);
+    const message = await runCommitizen(io, extractOriginalSubject());
+    // With an empty subject, cz-git emits "type(scope): " with a trailing
+    // space before the newline (or end of string) — the conventional
+    // commits header pattern requires that literal ": " to parse the type
+    // at all, so the space can't be stripped. commitlint.config.js
+    // downgrades `header-trim` to a warning to accommodate this.
     writeFileSync(messageFile, message);
 
     const second = runCommitlint();
