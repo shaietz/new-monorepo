@@ -1,0 +1,30 @@
+{
+  "name": "@repo/{{ name }}-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check-types": "tsc"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "*",
+{{#if isNode}}
+    "@types/node": "^24.13.3",
+{{/if}}
+    "@vitest/coverage-v8": "^4.1.10",
+{{#if isBrowser}}
+    "jsdom": "^30.0.1",
+{{/if}}
+    "typescript": "~6.0.2",
+{{#if isBrowser}}
+    "vite": "^8.2.0",
+{{/if}}
+    "vitest": "^4.1.10"
+  }
+}

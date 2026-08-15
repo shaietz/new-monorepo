@@ -1,0 +1,55 @@
+# `@repo/{{ name }}`
+
+TODO: say what this package is for.
+
+## Usage
+
+```ts
+import { greeting } from "@repo/{{ name }}";
+
+greeting("world"); // "Hello, world!"
+```
+
+Add it to a workspace with `npm install @repo/{{ name }} -w <that-workspace>`, which pins it at `*`
+the way `npm run syncpack` requires for local packages.
+
+## Scripts
+
+| Script          | What it does                           |
+| --------------- | -------------------------------------- |
+| `test`          | Vitest, once.                          |
+| `test:watch`    | Vitest in watch mode.                  |
+| `test:coverage` | Vitest with v8 coverage, gated at 80%. |
+| `check-types`   | `tsc`.                                 |
+
+Run them from the repo root with `npm run <script> -w @repo/{{ name }}`, or through turbo
+(`npx turbo run test --filter=@repo/{{ name }}`).
+
+There is no `build`. The package ships TypeScript source — `exports` points straight at
+`src/index.ts`, Node 24 strips the types at load, and Vite compiles it for the browser.
+
+## Boundaries
+
+`turbo.json` tags this workspace `["{{ tag }}"]`, and `npm run boundaries` enforces what that lets
+it depend on.
+
+{{#if isBrowser}}
+A `browser` workspace may not depend on a `node` one. `tsconfig.json` extends
+`@repo/typescript-config/react.json`, so `types` is `["vite/client"]` and `tsc` rejects `process` or
+`node:fs` here — the tag and the tsconfig enforce the same rule from two directions. `vite` is a
+devDependency for that `vite/client` types entry alone, not because this package bundles anything.
+{{else if isNode}}
+A `node` workspace may not depend on a `browser` one. `tsconfig.json` extends
+`@repo/typescript-config/node.json`, so `types` is `["node"]` and Node APIs are available.
+{{else}}
+An `isomorphic` workspace may depend on neither `node` nor `browser` — it has to run in both.
+`tsconfig.json` extends `@repo/typescript-config/library.json`, so `types` is `[]` and `tsc` rejects
+`process`, `node:fs` and `document` alike. This is where Zod schemas shared between a client and a
+service belong.
+{{/if}}
+
+## Exports
+
+Everything public goes through `src/index.ts`. `npm run knip` runs with `includeEntryExports`, so an
+export nothing imports is reported as dead code — tag a deliberate one `@public`, the way
+[`@repo/fastify-base`](../fastify-base/src/index.ts) does.
