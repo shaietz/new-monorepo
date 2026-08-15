@@ -27,8 +27,15 @@ declare module "fastify" {
    * the shape it passed to `loadConfig` so schema and type cannot drift:
    *
    * ```ts
-   * interface FastifyConfig extends z.infer<z.ZodObject<typeof extraEnv>> {}
+   * type ExtraEnv = z.infer<z.ZodObject<typeof extraEnv>>;
+   *
+   * declare module "fastify" {
+   *   interface FastifyConfig extends ExtraEnv {}
+   * }
    * ```
+   *
+   * The alias is named rather than inlined because oxlint's `import/namespace` cannot follow
+   * `z.infer` into a `declare module` block and reports it as missing from `zod`.
    */
   interface FastifyConfig extends BaseConfig {}
 

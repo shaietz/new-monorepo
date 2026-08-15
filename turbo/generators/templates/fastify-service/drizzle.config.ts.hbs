@@ -1,0 +1,15 @@
+import { defineConfig } from "drizzle-kit";
+
+try {
+  process.loadEnvFile();
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+}
+
+export default defineConfig({
+  dialect: "postgresql",
+  schema: "./src/db/schemas/index.ts",
+  out: "./src/db/migrations",
+  dbCredentials: { url: process.env.DATABASE_URL ?? "" },
+  casing: "snake_case",
+});

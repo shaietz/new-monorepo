@@ -7,7 +7,7 @@ import { z } from "zod";
 import { basePlugin, loadConfig, serverOptions } from "@repo/fastify-base";
 {{#if postgres}}
 import postgresPlugin from "./plugins/external/postgres.ts";
-import type { PgModule } from "./plugins/external/postgres.ts";
+import type { Pool } from "./plugins/external/postgres.ts";
 {{/if}}
 {{#if redis}}
 import redisPlugin from "./plugins/external/redis.ts";
@@ -30,16 +30,15 @@ const extraEnv = {
 
 export const config = loadConfig(extraEnv);
 
-// Merges this service's variables into `fastify.config`, derived from the schema above so the
-// runtime shape and the type cannot drift.
+type ExtraEnv = z.infer<z.ZodObject<typeof extraEnv>>;
+
 declare module "fastify" {
-  interface FastifyConfig extends z.infer<z.ZodObject<typeof extraEnv>> {}
+  interface FastifyConfig extends ExtraEnv {}
 }
 
-/** Stand-in clients a test can substitute; production registers the real ones. */
 export interface AppOptions {
 {{#if postgres}}
-  readonly pg?: PgModule | undefined;
+  readonly pool?: Pool | undefined;
 {{/if}}
 {{#if redis}}
   readonly redisClient?: RedisClient | undefined;
@@ -51,20 +50,12 @@ export const config = loadConfig();
 
 export const options = serverOptions(config, NAME);
 
-/**
- * `fp` so the error handler, schema compilers and decorators inside `basePlugin` apply to the root
- * instance rather than a throwaway child scope.
- *
- * `basePlugin` is the shared stack — config, Zod, security middleware, health probes, metrics,
- * OpenAPI, the error handler. To change one of those, replace this line with the individual plugins
- * it registers; see `@repo/fastify-base`'s README.
- */
 export default fp{{#if hasDataStore}}<AppOptions>{{/if}}(
   async function app(fastify{{#if hasDataStore}}, opts{{/if}}) {
     await fastify.register(basePlugin, { config, name: NAME });
 
 {{#if postgres}}
-    await fastify.register(postgresPlugin, { pg: opts.pg });
+    await fastify.register(postgresPlugin, { pool: opts.pool });
 {{/if}}
 {{#if redis}}
     await fastify.register(redisPlugin, { client: opts.redisClient });

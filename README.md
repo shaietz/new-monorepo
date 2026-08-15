@@ -132,16 +132,28 @@ exist under `apps/` **or** `packages/`: the two share a namespace because a work
 `ENV PORT`, `EXPOSE` and the healthcheck target in the generated Dockerfile, so the image's declared
 port is the one it actually listens on.
 
-It also asks whether the service needs a Redis client or a Postgres client — independently, so you
-can have neither, either, or both. Saying yes adds the dependency, the env vars, a `src/<store>.ts`
-holding the connection options and a health probe, its tests, and a `healthCheck` wired into
-`/readyz` through `basePlugin`. Saying no to both produces exactly what the generator produced
-before the options existed.
+It also asks whether the service needs a Redis client or Postgres — independently, so you can have
+neither, either, or both. Saying yes adds the dependency, the env vars, a plugin under
+`src/plugins/external/` holding the connection options and a health probe, its tests, and a
+`healthCheck` wired into `/readyz` through `basePlugin`. Saying no to both produces exactly what the
+generator produced before the options existed.
 
-| Answer     | Adds                                                                       |
-| ---------- | -------------------------------------------------------------------------- |
-| `redis`    | `@fastify/redis` + `REDIS_URL`, decorating the server with `server.redis`. |
-| `postgres` | `@fastify/postgres` + `pg`, `DATABASE_URL`, `PG_POOL_MAX` → `server.pg`.   |
+| Answer     | Adds                                                                                         |
+| ---------- | -------------------------------------------------------------------------------------------- |
+| `redis`    | `@fastify/redis` + `REDIS_URL`, decorating the server with `server.redis`.                   |
+| `postgres` | `pg` + `drizzle-orm`, `DATABASE_URL`, `PG_POOL_MAX`, decorating the server with `server.db`. |
+
+`postgres` scaffolds the whole database setup, not just a connection: the service gains a `src/db/`
+directory holding `schemas/` and `migrations/` (excluded from coverage), a `drizzle.config.ts`, and
+`db:generate`,
+`db:migrate` and `db:studio` scripts driving `drizzle-kit`. Schemas and migration history are
+service-owned and stay in the service; `@repo/fastify-base` holds only what every service runs
+identically.
+
+Drizzle owns the pool directly rather than sitting on `@fastify/postgres`, which would otherwise add
+a second query API over the same pool — and `pg.transact()` checks out its own client, so a
+`fastify.db` call inside that callback would silently run outside the transaction. One decorator,
+one way to open a transaction. Raw SQL is ``db.execute(sql`…`)``; the pool is `db.$client`.
 
 Both are registered from `app.ts` with ordinary plugin options, so a test passes a stand-in client
 — which is what lets a generated service's suite run with no Redis or Postgres anywhere. Note that
@@ -159,15 +171,18 @@ Nothing at the root needs editing afterwards. `.oxlintrc.json`, `turbo.json`, `k
 
 `turbo/generators/config.ts` wires up templates under `turbo/generators/templates/`.
 
-- Template files are suffixed `.hbs`, which `addMany` strips. **`Dockerfile` is the exception** — it
-  is stored unsuffixed, because plop only strips `.hbs` when the remaining name still has an
-  extension. It is rendered through Handlebars all the same.
+- Template files are suffixed `.hbs`, which `addMany` strips. **`Dockerfile` and
+  `src/db/migrations/.gitkeep` are the exceptions** — both are stored unsuffixed, because plop only
+  strips `.hbs` when the remaining name still has an extension, and neither `Dockerfile` nor
+  `.gitkeep` has one. They are rendered through Handlebars all the same.
 - The suffix is load-bearing: it is what hides templates from oxlint, knip, `tsc` and Vitest.
   `.oxfmtrc.json` has to exclude them explicitly, though — oxfmt formats by content, not extension,
-  and will happily reflow a template into rubble.
+  and will happily reflow a template into rubble. It excludes `**/db/migrations/**` for the same
+  reason: drizzle-kit owns the snapshot and journal JSON it writes there, and reformatting machine-
+  generated state only produces churn.
 - Content that needs a literal `{{` has to escape it as `\{{`, or sit inside a
   `{{{{raw}}}}…{{{{/raw}}}}` block.
-- Optional files — `src/redis.ts.hbs` and friends — live in the same template directory as
+- Optional files — `src/plugins/external/redis.ts.hbs`, everything under `src/db/`, and friends — live in the same template directory as
   everything else and are dropped from `globOptions.ignore` when the answer is no. `addMany` writes
   everything it globs, so filtering the glob is what makes a file conditional.
 - Handlebars sees the prompt answers directly, so a template can say `{{#if redis}}`. Anything
