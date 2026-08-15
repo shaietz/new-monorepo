@@ -2,10 +2,11 @@
 
 Shared tRPC utilities for the matching Fastify service.
 
-This package exports a small tRPC surface intended to be used by the generated service:
+This package exports the generated service's tRPC router alongside the small helpers used to build
+routes:
 
 ```ts
-import { router, publicProcedure } from "@repo/{{ name }}-api";
+import { appRouter, router, publicProcedure } from "@repo/{{ name }}-api";
 
 const api = router({
 	// use `publicProcedure` to build routes shared with the service
@@ -14,7 +15,8 @@ const api = router({
 
 When you generate a Fastify service called `foo` the generator creates `packages/foo-api` and
 publishes it locally as `@repo/foo-api`. The generated service imports from that package so your
-service and package remain decoupled at development time.
+service and package remain decoupled at development time, while this package also re-exports the
+service's `appRouter` for clients and tests.
 
 Add it to a workspace in the usual way (the generator already places it under `packages/`):
 

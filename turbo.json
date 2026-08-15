@@ -18,6 +18,11 @@
           "deny": ["browser"]
         }
       },
+      "api": {
+        "dependencies": {
+          "allow": ["app"]
+        }
+      },
       "isomorphic": {
         "dependencies": {
           "deny": ["node", "browser"]

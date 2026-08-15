@@ -58,13 +58,14 @@ must be unique.
 
 `turbo.json` assigns each workspace tags, and `npm run boundaries` enforces them:
 
-| Tag          | Rule                                           |
-| ------------ | ---------------------------------------------- |
-| `app`        | Nothing may depend on it — apps are leaves.    |
-| `browser`    | May not depend on `node`.                      |
-| `node`       | May not depend on `browser`.                   |
-| `isomorphic` | May depend on neither — it has to run in both. |
-| `config`     | No restrictions.                               |
+| Tag          | Rule                                               |
+| ------------ | -------------------------------------------------- |
+| `app`        | Nothing may depend on it — apps are leaves.        |
+| `browser`    | May not depend on `node`.                          |
+| `node`       | May not depend on `browser`.                       |
+| `api`        | May depend on `app` to re-export a service router. |
+| `isomorphic` | May depend on neither — it has to run in both.     |
+| `config`     | No restrictions.                                   |
 
 `app` is stated as `dependents: { allow: [] }` rather than being listed in three separate denylists.
 It covers app → app, package → app, and any tag added later, in one place.
