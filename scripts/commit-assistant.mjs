@@ -1,10 +1,16 @@
 import { spawnSync } from "node:child_process";
 import { openSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import tty from "node:tty";
 import { fileURLToPath } from "node:url";
-import { createPromptModule } from "inquirer";
-import czAdapter from "cz-conventional-changelog";
+import inquirer, { createPromptModule } from "inquirer";
+
+const { Separator } = inquirer;
+
+// cz-git's ESM build only exports its `defineConfig`/`definePrompt` config
+// helpers; the commitizen `prompter` adapter only exists in the CJS build.
+const czAdapter = createRequire(import.meta.url)("cz-git");
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(moduleDir, "..");
@@ -86,13 +92,19 @@ function exit(code, io) {
   process.exit(code);
 }
 
-// Drives the commitizen `cz-conventional-changelog` adapter directly (rather
-// than shelling out to `git-cz`), so it can share the TTY streams we've
-// already wired up for this hook invocation.
+// Drives the commitizen `cz-git` adapter directly (rather than shelling out
+// to `git-cz`), so it can share the TTY streams we've already wired up for
+// this hook invocation.
 function runCommitizen(io) {
   const prompt = createPromptModule({ input: io.input, output: io.output });
   return new Promise((resolve) => {
-    czAdapter.prompter({ prompt }, resolve);
+    // cz-git registers extra prompt types (search-list, etc.) onto `cz`
+    // before calling `cz.prompt`, so unlike the plain `{ prompt }` shape
+    // used previously, it needs `registerPrompt` too.
+    czAdapter.prompter(
+      { prompt, registerPrompt: prompt.registerPrompt.bind(prompt), Separator },
+      resolve,
+    );
   });
 }
 
@@ -105,6 +117,31 @@ async function main() {
   const first = runCommitlint();
   if (first.status === 0) {
     process.exit(0);
+  }
+
+  // VS Code's Source Control panel runs git straight from the extension
+  // host (child_process, no shell, no console attached). On Windows,
+  // opening CONIN$/CONOUT$ below can still succeed in that case (there's a
+  // hidden console handle), so the interactive prompt would render into a
+  // window you can never see or type into and just hang forever. Fail fast
+  // instead.
+  //
+  // VSCODE_GIT_IPC_HANDLE alone doesn't distinguish that from a commit run
+  // in VS Code's own integrated terminal: VS Code injects the same handle
+  // into every terminal it spawns, and husky's sh.exe wrapper on Windows
+  // doesn't reliably preserve process.stdin.isTTY either way, so neither
+  // signal tells the two apart on its own. TERM_PROGRAM=vscode does: VS
+  // Code sets it for every integrated terminal shell, but the extension
+  // host process driving the SCM panel never has it.
+  if (process.env.VSCODE_GIT_IPC_HANDLE && process.env.TERM_PROGRAM !== "vscode") {
+    console.error(first.stdout?.trim() || first.stderr?.trim() || "");
+    console.error(
+      "\ncommit-assistant: commit message is invalid, and the interactive prompt can't run " +
+        "from VS Code's Source Control panel.\n" +
+        "Either fix the message above to match Conventional Commits, or run `npm run commit` " +
+        "in a terminal.",
+    );
+    process.exit(1);
   }
 
   let io;
