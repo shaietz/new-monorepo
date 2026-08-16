@@ -30,9 +30,9 @@
     "@commitlint/config-conventional": "^21.2.0",
     "@turbo/gen": "^2.10.9",
     "commitizen": "^4.3.1",
-    "cz-conventional-changelog": "^3.3.0",
+    "cz-git": "^1.13.2",
     "husky": "^9.1.7",
-    "inquirer": "^9.3.7",
+    "inquirer": "^9.3.8",
     "knip": "^6.32.0",
     "lint-staged": "^17.3.0",
     "oxfmt": "^0.62.0",
@@ -43,7 +43,7 @@
   },
   "config": {
     "commitizen": {
-      "path": "cz-conventional-changelog"
+      "path": "cz-git"
     }
   },
   "devEngines": {
